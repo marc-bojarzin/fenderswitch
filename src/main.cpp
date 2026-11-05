@@ -28,16 +28,17 @@
 //    GND): a press switches the amp to that channel, the LED swells while the
 //    preset differs from the stored one, holding the button 2 s stores it.
 //  - Red, green and yellow on/off LEDs (each via 220-330 ohm resistor to GND)
-//    show the selected channel. On the prototype, OUT_CH and OUT_GAIN drive
-//    plain LEDs (220-330 ohm to GND) instead of the relay stages: lit = relay
-//    ON.
+//    show the selected channel.
+//  - OUT_CH and OUT_GAIN drive the TLP222A input LEDs directly (390 ohm in
+//    series, cathode to GND). On the prototype, plain LEDs (220-330 ohm to
+//    GND) take their place: lit = relay ON.
 
 // Pin assignments.
 #define ENC_CLK_PIN     2  // Rotary encoder CLK pin (clock signal)
 #define ENC_DT_PIN      4  // Rotary encoder DT pin (data)
 #define ENC_SW_PIN      5  // Rotary encoder SW pin (push button)
-#define OUT_CH_PIN      7  // Relay 1 (channel), HIGH = relay ON
-#define OUT_GAIN_PIN    8  // Relay 2 (gain), HIGH = relay ON
+#define OUT_CH_PIN      7  // Relay 1 LED (channel), HIGH = relay ON
+#define OUT_GAIN_PIN    8  // Relay 2 LED (gain), HIGH = relay ON
 #define RED_LED_PIN     9  // Red LED pin ("More Drive")
 #define YELLOW_LED_PIN 10  // Yellow LED pin ("Drive")
 #define GREEN_LED_PIN  11  // Green LED pin ("Clean")
@@ -78,9 +79,19 @@ static PresetLoader presets;
 static LiquidCrystal_I2C lcd{LCD_I2C_ADDR, LCD_COLS, LCD_ROWS};
 static LcdBuffer lcd_buffer{&lcd};
 
-// Interrupt service routine for the rotary encoder CLK pin. Calls the encoder's
-// on_clk_change() method.
-static void onEncoderClk() { encoder.on_clk_change(); }
+// The encoder needs an interrupt on both CLK and DT, but on the Nano only pins
+// 2 and 3 have external interrupts. So it uses the pin-change interrupt of
+// port D (PCINT2, pins 0-7), enabled for the two encoder pins only. Both pins
+// must be on port D, otherwise the ISR below doesn't fire for them.
+static void enablePinChangeInterrupt(uint8_t pin)
+{
+    *digitalPinToPCMSK(pin) |= bit(digitalPinToPCMSKbit(pin));
+    PCIFR = bit(digitalPinToPCICRbit(pin));  // drop a stale pending flag
+    *digitalPinToPCICR(pin) |= bit(digitalPinToPCICRbit(pin));
+}
+
+// Pin-change interrupt for port D: an edge on CLK or DT.
+ISR(PCINT2_vect) { encoder.on_change(); }
 
 // Stats task instance: keeps track of various statistics.
 static StatsTask stats;
@@ -113,7 +124,8 @@ void setup() {
     lcd_buffer.update(0, "fenderswitch    ");
     presets.begin();
     encoderTask.apply();
-    attachInterrupt(digitalPinToInterrupt(ENC_CLK_PIN), onEncoderClk, CHANGE);
+    enablePinChangeInterrupt(ENC_CLK_PIN);
+    enablePinChangeInterrupt(ENC_DT_PIN);
 }
 
 void loop() {

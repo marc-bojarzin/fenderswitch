@@ -29,6 +29,7 @@ enum LedStatus
   , led_blink_fast  = 3
   , led_flash_once  = 4
   , led_swell       = 5
+  , led_wink        = 6
 };
 
 // On/off LED on a digital pin.
@@ -80,6 +81,10 @@ public:
 
     // Turns the LED on for duration ms, then off.
     void flash(unsigned duration);
+
+    // Turns the LED off for duration ms, then on (steady): the opposite of
+    // flash(), for a lit LED.
+    void wink(unsigned duration);
 
     // Blinks or ends a flash; called by runTasks().
     void run() override;

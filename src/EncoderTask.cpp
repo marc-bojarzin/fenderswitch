@@ -72,6 +72,9 @@ void EncoderTask::store()
 {
     if (!presets_.dirty())
     {
+        // Nothing to store: a short wink shows the press was registered.
+        channelLed(presets_.working().channel()).wink(NOTHING_TO_STORE_MS);
+        Serial.println(F("store: nothing to store"));
         return;
     }
     presets_.store();
@@ -86,23 +89,38 @@ void EncoderTask::store()
 
 void EncoderTask::showChannel()
 {
-    AmpChannel channel = presets_.working().channel();
+    AmpChannel active = presets_.working().channel();
     bool dirty = presets_.dirty();
-    Led* leds[] = {&led_green_, &led_yellow_, &led_red_};
     for (uint8_t i = 0; i < AMP_CHANNEL_COUNT; ++i)
     {
-        if (i != channel_index(channel))
+        AmpChannel channel = static_cast<AmpChannel>(i);
+        Led& led = channelLed(channel);
+        if (channel != active)
         {
-            leds[i]->off();
+            led.off();
         }
         else if (dirty)
         {
-            leds[i]->swell();
+            led.swell();
         }
         else
         {
-            leds[i]->on();
+            led.on();
         }
+    }
+}
+
+Led& EncoderTask::channelLed(AmpChannel channel)
+{
+    switch (channel)
+    {
+    case AmpChannel::drive:
+        return led_yellow_;
+    case AmpChannel::more_drive:
+        return led_red_;
+    case AmpChannel::clean:
+    default:
+        return led_green_;
     }
 }
 

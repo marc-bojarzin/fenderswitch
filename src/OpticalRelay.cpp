@@ -5,7 +5,9 @@ OpticalRelay::OpticalRelay(byte ch_pin, byte gain_pin)
     , gain_pin_{gain_pin}
     , second_pin_{ch_pin}
 {
-    // HIGH first: the pins switch from Hi-Z straight to driving HIGH.
+    // HIGH first: the pins switch from Hi-Z straight to driving HIGH, without
+    // a LOW glitch. (While still inputs, this briefly enables the internal
+    // pull-ups, which already pass a little current into the relay LEDs.)
     digitalWrite(ch_pin_, HIGH);
     digitalWrite(gain_pin_, HIGH);
     pinMode(ch_pin_, OUTPUT);

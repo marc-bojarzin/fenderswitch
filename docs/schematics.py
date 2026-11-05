@@ -45,25 +45,14 @@ def footswitch_line():
 
 
 def relay_driver():
-    """One NPN low-side driver for a TLP222A input LED."""
+    """A TLP222A input LED driven straight from the GPIO through R_F."""
     with schemdraw.Drawing(file=OUT / 'relay_driver.svg', show=False) as d:
         d.config(unit=2.5, bgcolor='white')
-        q = elm.BjtNpn(circle=True).label('Q1\nBC547', 'right')
-        elm.Ground().at(q.emitter)
-        # Collector: relay LED and R_F up to +5V.
-        elm.Line().at(q.collector).up(0.5)
-        elm.LED().up().reverse().label('TLP222A\nLED', 'bottom')
-        elm.Resistor().up().label('R_F\n390Ω', 'bottom')
-        elm.Vdd().label('+5V')
-        # Base: R_B from the GPIO, R_P pull-up to +5V.
-        elm.Line().at(q.base).left(1.5)
-        base = elm.Dot()
-        d.push()
-        elm.Resistor().up().label('R_P\n10k', 'top')
-        elm.Vdd().label('+5V')
-        d.pop()
-        elm.Resistor().left().label('R_B\n1k', 'bottom')
-        elm.Dot(open=True).label('GPIO\n(D9 / D10)', 'left')
+        elm.Dot(open=True).label('GPIO\n(D7 / D8)', 'left')
+        elm.Resistor().right().label('R_F\n390Ω')
+        elm.Line().right(0.5)
+        elm.LED().down().label('TLP222A\nLED', 'bottom')
+        elm.Ground()
 
 
 def midi_in():
@@ -143,7 +132,7 @@ def encoder():
                 (enc.e0[0] + 9, enc.e0[1]))
 
         # A, B and SW straight across, C to GND.
-        notes = ['INT0', '', 'INPUT_PULLUP', '']
+        notes = ['PCINT18', 'PCINT20', 'INPUT_PULLUP', '']
         for i, note in enumerate(notes):
             wire = elm.Line().at(getattr(enc, f'e{i}')).to(
                 getattr(nano, f'n{i}'))

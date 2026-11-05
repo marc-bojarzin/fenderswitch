@@ -18,6 +18,11 @@
 #define BROWSE_SETTLE_MS 300
 #endif
 
+// How long the channel LED goes dark when there is nothing to store, in ms.
+#ifndef NOTHING_TO_STORE_MS
+#define NOTHING_TO_STORE_MS 150
+#endif
+
 // Browses the presets with the rotary encoder.
 //
 // Every step selects the next (+1) or previous (-1) program, wrapping around
@@ -37,8 +42,8 @@
 // LED of the active channel is steady while the preset is clean and swells
 // while it is dirty, and the LCD marks a dirty preset with a "*".
 //
-// Polls every pass: moved() only reports -1, 0 or +1 per call, so polling
-// rarely would lose steps.
+// Polls every pass. moved() accumulates the steps between polls, so a slow
+// pass doesn't lose any; several steps are applied at once.
 class EncoderTask : public Task
 {
     RotaryEncoder& encoder_;
@@ -78,13 +83,17 @@ public:
     void apply();
 
     // Stores a dirty working buffer in its preset and EEPROM and shows it as
-    // clean again. Does nothing unless the preset is dirty.
+    // clean again. On a clean preset it only acknowledges the request: the
+    // channel LED goes dark for NOTHING_TO_STORE_MS.
     void store();
 
 private:
     // Lights the LED of the working buffer's channel only: steady while clean,
     // swelling while dirty.
     void showChannel();
+
+    // Returns the LED of channel.
+    Led& channelLed(AmpChannel channel);
 
     // Writes the program (1-based, as on MIDI gear), its channel and a "*"
     // while dirty, or the menu placeholder, to the second LCD line.

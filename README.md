@@ -44,7 +44,7 @@ An internal LCD shows the current program and its channel. It also shows the con
 - Configurable MIDI channel and OMNI mode
 - LCD with menus, navigated by a rotary encoder with a push button
 - Store button: saves a modified preset with one push, confirms settings in the menus
-- Falls back to Clean while the microcontroller is in reset, so a brown-out or watchdog reset never makes the amp jump to its loudest setting
+- Photorelays driven straight from the microcontroller's pins, no transistor stage
 
 ## How the amp's footswitch line works
 
@@ -72,10 +72,7 @@ Source: Fender schematic 050384 rev. B and footswitch assembly 050419. The volta
 | | 3 × LED | Green, yellow and red channel indicators, each with a series resistor |
 | | 4 × momentary push button | One per channel, plus Store next to the encoder. Wired to GND, using the internal pull-ups, debounced in firmware |
 | U1 | Toshiba TLP222A-2 (or 2 × TLP222A) | Dual photorelay, 60 V, 500 mA, R_ON ≤ 2 Ω. Ch. 1 = channel, ch. 2 = gain |
-| Q1, Q2 | BC547 | Relay drivers. Any small-signal NPN works (2N3904, MMBT3904), but check the pinout: BC547 is C-B-E, 2N3904 is E-B-C (flat side facing you) |
-| R_F × 2 | 390 Ω, 1/4 W | Relay LED current about 10 mA at 5 V (use 200 Ω at 3.3 V) |
-| R_B × 2 | 1 kΩ | Base resistor from the GPIO |
-| R_P × 2 | 10 kΩ | Base pull-up to V_DD, keeps the relay ON during reset |
+| R_F × 2 | 390 Ω, 1/4 W | In series between the GPIO and the relay LED's anode, about 9 mA at 5 V (use 200 Ω at 3.3 V) |
 | D1, D2 | 1N4148 | Half-cycle steering. D1 anode to tip, D2 cathode to tip |
 | TVS | SMBJ15CA (bidirectional) | ESD and plug-in transients across tip and sleeve |
 | J | 5-pin DIN socket (180°) | MIDI IN |
@@ -92,17 +89,17 @@ The KiCad 9 project is in [hardware/fenderswitch/](hardware/fenderswitch/). It w
 
 Requirements for any replacement switch element: ≥ 60 V off-state voltage, ≥ 100 mA on-state current (the line carries about 46 mA peak), on-resistance ≤ 2 Ω (the Clean state has the smallest noise margin) and current flow in both directions. Phototransistor optocouplers, CMOS analog switches like the 4066 and plain low-side MOSFETs do not meet these.
 
-### Relay drivers
+### Relay inputs
 
-The microcontroller doesn't drive the photorelay LEDs directly. Each relay gets an NPN low-side driver:
+The microcontroller drives each photorelay's input LED directly from its pin, through R_F to GND:
 
-![Relay driver: GPIO through R_B to the base of a BC547, R_P pulls the base up to 5 V, the collector sinks the TLP222A LED fed through R_F from 5 V](docs/relay_driver.svg)
+![Relay input: GPIO through R_F 390 Ω to the anode of the TLP222A LED, cathode to GND](docs/relay_driver.svg)
 
-R_P pulls the base up, so the relay LED is **ON whenever 5 V is present**, even while the microcontroller is in reset, booting or has its pin unconfigured. To switch the relay OFF, the firmware drives the pin LOW, and the R_B / R_P divider holds the base at about 0.45 V, well below turn-on.
+Pin HIGH: about (4.8 V − 1.15 V) / 390 Ω ≈ 9 mA flow through the LED and the relay closes. That's well above the TLP222A's maximum trigger current of 3 mA and well below the pin's 20 mA rating. Pin LOW: the LED sees 0 V and the relay is open.
 
-With both relays ON the amp is in Clean mode, the quiet state. So a brown-out or watchdog reset doesn't make the amp switch to a loud channel. Only a complete loss of power still gives Drive + More Drive, because the photorelays are normally open.
+**No fail-safe during reset.** While the microcontroller is in reset or running the bootloader (about 1–2 s on the old Nano bootloader), its pins are Hi-Z, so no current flows and both relays are open. The amp sees **More Drive**, its loudest setting, on every power-up and reset until the firmware starts and drives the pins HIGH (Clean). Turn the amp's volume down, or switch it to standby, while you power up, reset or upload to the Nano.
 
-Keep the microcontroller side (5 V, GND, transistors) and the amp side (tip, sleeve, D1, D2, TVS, relay outputs) apart on the board. With a separate power supply the photorelays keep the two grounds isolated, which avoids ground loops and hum.
+Keep the microcontroller side (5 V, GND, relay LEDs) and the amp side (tip, sleeve, D1, D2, TVS, relay outputs) apart on the board. With a separate power supply the photorelays keep the two grounds isolated, which avoids ground loops and hum.
 
 ### MIDI IN
 
@@ -119,20 +116,20 @@ The MIDI IN circuit follows the MIDI 1.0 electrical specification (2014):
 
 A bare mechanical encoder with push button connects to the Nano with two 10 kΩ pull-ups. It has five pins: **A**, **C** and **B** on one side (C, the common contact, in the middle) and the two **SW** pins on the other.
 
-![Rotary encoder: A to D2 (INT0) and B to D4, each with a 10 kΩ pull-up to 5V; one SW pin to D5 (INPUT_PULLUP); C and the other SW pin to GND](docs/encoder.svg)
+![Rotary encoder: A to D2 and B to D4 (pin-change interrupt), each with a 10 kΩ pull-up to 5V; one SW pin to D5 (INPUT_PULLUP); C and the other SW pin to GND](docs/encoder.svg)
 
 - The encoder only shorts A and B to C, and the push button shorts its two SW pins. So C and one SW pin go to GND, and A, B and SW need pull-ups.
 - A and B get **10 kΩ to 5V**. That's stiffer than the Nano's internal pull-ups (20–50 kΩ), so the lines pick up less noise and their edges are faster, and the contacts carry about 0.5 mA, enough to keep them clean. SW is only polled, so the internal pull-up is enough there.
-- **A** (CLK in the code) must be on D2 or D3, because only those pins have an external interrupt (INT0 and INT1). B (DT) and SW are polled and can be on any digital pin.
+- **A** (CLK in the code) and **B** (DT) must both be on D0-D7 (port D), because the firmware decodes them with the port's pin-change interrupt (PCINT2). SW is polled and can be on any digital pin.
 - The firmware turns on the internal pull-ups on A and B as well. They sit in parallel with the 10 kΩ (about 8 kΩ in total) and keep the encoder working if a resistor is missing.
-- If you still see stray steps, the encoder datasheets suggest an RC filter per signal: 10 kΩ in series to the pin and 10 nF from the pin to GND. The firmware already filters bounce, so this is optional.
+- If you still see stray steps, the encoder datasheets suggest an RC filter per signal: 10 kΩ in series to the pin and 10 nF from the pin to GND. The quadrature decoder already cancels bounce, so this is optional.
 - If turning right goes to the previous program, swap the A and B wires.
 
 How the firmware decodes the signals is explained in [docs/rotary_encoder.md](docs/rotary_encoder.md).
 
 ### Prototype: LEDs instead of relays
 
-For prototyping, the relay stages (driver, photorelay and amp side) are replaced by two plain LEDs, one on OUT_CH and one on OUT_GAIN. Each LED is wired from the pin through a 220–330 Ω resistor to GND, like the channel LEDs. A lit LED means "relay ON" (closed), so the LEDs show the [switching states](#channel-switching-states) directly:
+For prototyping, the relay stages (photorelay and amp side) are replaced by two plain LEDs, one on OUT_CH and one on OUT_GAIN. Each LED is wired from the pin through a 220–330 Ω resistor to GND, like the channel LEDs. A lit LED means "relay ON" (closed), so the LEDs show the [switching states](#channel-switching-states) directly:
 
 | Channel    | OUT_CH LED | OUT_GAIN LED |
 |------------|------------|--------------|
@@ -140,9 +137,8 @@ For prototyping, the relay stages (driver, photorelay and amp side) are replaced
 | Drive      | off        | on           |
 | More Drive | off        | off          |
 
-The firmware drives the pins exactly as it would drive the real relay stages. Two things differ from the final hardware:
+The LEDs are wired just like the photorelay inputs, so they behave the same, including during reset (both off). One thing to keep in mind:
 
-- There is no R_P pull-up, so both LEDs are **off** while the microcontroller is in reset or its pins are still Hi-Z. The real relays are ON in that state. The LEDs show only what the firmware drives, not the reset fallback.
 - The 5 ms make-before-break steps are too short to see. To check the order of a switching sequence, watch the pins with a logic analyzer, or build with a much longer delay, for example `build_flags = -DRELAY_SETTLE_MS=500` in [platformio.ini](platformio.ini).
 
 ### Wiring
@@ -150,23 +146,34 @@ The firmware drives the pins exactly as it would drive the real relay stages. Tw
 | Nano pin | Connected to | Notes |
 |----------|--------------|-------|
 | D0 (RX) | MIDI IN: optocoupler output (pin 4) | UART, 31250 baud. Shared with the USB chip, see below |
-| D2 | Encoder A (CLK) | External interrupt, so A must be on D2 or D3 |
-| D4 | Encoder B (DT) | |
+| D2 | Encoder A (CLK) | Pin-change interrupt (PCINT18), A and B must be on D0-D7 |
+| D4 | Encoder B (DT) | Pin-change interrupt (PCINT20) |
 | D5 | Encoder SW | "Enter" button |
-| D6 | Green LED | Clean |
-| D7 | Yellow LED | Drive |
-| D8 | Red LED | More Drive |
+| D7 | OUT_CH: R_F to relay 1 LED (channel) | HIGH = relay ON |
+| D8 | OUT_GAIN: R_F to relay 2 LED (gain) | HIGH = relay ON |
+| D9 | Red LED | More Drive, PWM (swell) |
+| D10 | Yellow LED | Drive, PWM (swell) |
+| D11 | Green LED | Clean, PWM (swell) |
 | A4 (SDA) | LCD SDA | I2C |
 | A5 (SCL) | LCD SCL | I2C |
-| D9 | OUT_CH: R_B of Q1, relay 1 (channel) | HIGH / Hi-Z = relay ON |
-| D10 | OUT_GAIN: R_B of Q2, relay 2 (gain) | HIGH / Hi-Z = relay ON |
 | A0 | Clean button | To GND, `INPUT_PULLUP` |
 | A1 | Drive button | To GND, `INPUT_PULLUP` |
 | A2 | More Drive button | To GND, `INPUT_PULLUP` |
 | A3 | Store button | To GND, `INPUT_PULLUP` |
-| 5V / GND | LCD VCC, R_F, R_P, encoder pull-ups, and GND for all modules (including encoder C and SW) | |
+| 5V / GND | LCD VCC, encoder pull-ups, and GND for all modules (including encoder C and SW and the relay LED cathodes) | |
 
-Don't use pins that the microcontroller actively drives LOW during boot for OUT_CH and OUT_GAIN.
+The channel LEDs must be on PWM pins, because a dirty preset makes its LED swell with `analogWrite()`. OUT_CH and OUT_GAIN only switch, so they use the non-PWM pins D7 and D8. Don't use D13 for OUT_CH or OUT_GAIN: the bootloader blinks the on-board LED on it, which would switch the relay.
+
+### Checking the relay stages
+
+If the amp doesn't react to a channel change, follow the signal from the Nano out to the relay with a multimeter (against GND unless noted):
+
+1. **Serial monitor** (31250 baud): every change prints `program=… channel=…`. No line means the button or encoder isn't registering, and the relay stage isn't involved.
+2. **D7 (OUT_CH) and D8 (OUT_GAIN):** about 4.8 V = ON, 0 V = OFF, as in [Channel switching states](#channel-switching-states). Clean = both HIGH, Drive = D7 LOW and D8 HIGH, More Drive = both LOW.
+3. **Across R_F:** about 3.6 V when ON (about 9 mA through the relay LED), 0 V when OFF. If the pin is HIGH but there's no voltage across R_F, the LED is open or reversed: check its polarity (TLP222A-2: pin 1 anode, pin 2 cathode for channel 1; pin 3 anode, pin 4 cathode for channel 2). If the pin is pulled well below 4.8 V, the LED is shorted or R_F is too small.
+4. **Relay output**, in ohms mode, with the amp side disconnected (TLP222A-2: pins 7–8 for channel 1, pins 5–6 for channel 2): a few Ω when ON, open when OFF. The photorelay has no visible indicator.
+
+To slow the sequence down enough to follow on a meter or LEDs, build with `-DRELAY_SETTLE_MS=500` (see [Prototype: LEDs instead of relays](#prototype-leds-instead-of-relays)).
 
 ### Sharing the UART with USB
 
@@ -203,7 +210,7 @@ Rule of thumb: when leaving Clean, set the gain first and then the channel. When
 ```mermaid
 stateDiagram-v2
     direction LR
-    [*] --> Clean: power-up / reset (R_P holds both relays ON)
+    [*] --> MoreDrive: power-up / reset (pins Hi-Z, both relays open)
     Clean --> Drive: GAIN on, 5 ms, CH off
     Clean --> MoreDrive: GAIN off, 5 ms, CH off
     Drive --> Clean: CH on, 5 ms, GAIN on
@@ -219,9 +226,9 @@ A full channel change takes 20–100 ms on the amp side anyway, because of the s
 
 Firmware notes:
 
-- In `setup()`, write HIGH to OUT_CH and OUT_GAIN **before** setting them to `OUTPUT`, so the relays stay ON through the switch from Hi-Z to output.
+- Write HIGH to OUT_CH and OUT_GAIN **before** setting them to `OUTPUT`, so the pins go straight from Hi-Z to HIGH and the amp leaves More Drive for Clean as early as possible. The `OpticalRelay` constructor does this, before `setup()` runs.
 - Start with the preset of program 1 (Clean on a fresh EEPROM).
-- Enable the watchdog, so a hung microcontroller resets into Clean.
+- Enable the watchdog, so a hung microcontroller restarts. It passes through More Drive while it resets and boots.
 - Debounce the buttons in software (about 30 ms).
 
 ## Firmware flow
@@ -252,9 +259,9 @@ flowchart TD
 
 Bench test before connecting to the amp:
 
-1. Measure the voltage across R_F and divide by R_F to get the LED current. Expect 9–11 mA when ON and about 0 when OFF.
+1. Measure the voltage across R_F and divide by R_F to get the LED current. Expect about 9 mA when ON and 0 when OFF.
 2. With the amp unplugged, measure the relay outputs with an ohmmeter. Expect about 1–2 Ω when ON and open when OFF. Mind the D1 / D2 orientation if you measure from tip to sleeve.
-3. Hold the Nano in reset with its reset button. Both relays must read ON.
+3. Hold the Nano in reset with its reset button. Both relays read OFF (More Drive). After you release it and the bootloader has finished, both relays must switch ON (Clean).
 
 Then on the amp, at low volume:
 
@@ -297,7 +304,7 @@ All 128 presets are initialized to **Clean** in the EEPROM. This is the **factor
 1. Press one of the three channel buttons, for example **Drive**. The amp switches to that channel right away.
 2. If the new channel differs from the one stored in the preset, its LED **swells** (fades up and down) and the LCD shows a `*` after the channel, for example `P12  Drive*`. This means the preset is **dirty**: the current state is modified but not saved.
 3. Press the button of the stored channel to go back to it. The preset is clean again and the LED lights steadily.
-4. To keep the change instead, **hold the same channel button for 2 seconds**, or **press Store** once. The new channel is written to the preset in EEPROM and the LED stops swelling.
+4. To keep the change instead, **hold the same channel button for 2 seconds**, or **press Store** once. The new channel is written to the preset in EEPROM and the LED stops swelling. If the preset has no unsaved change, there is nothing to store: the LED goes dark for a moment to show that the press was registered.
 
 A program change while the preset is dirty, whether by MIDI Program Change or with the encoder, drops the modified state without saving it. The preset keeps its stored channel.
 
@@ -313,13 +320,13 @@ Press the encoder's push button to enter menu mode, and press it again to leave.
 |------|---------|
 | [src/main.cpp](src/main.cpp) | Setup and main loop |
 | [include/Task.hpp](include/Task.hpp) | Cooperative tasks (protothread style) and the round-robin scheduler, no `delay()` anywhere |
-| [include/RotaryEncoder.hpp](include/RotaryEncoder.hpp) | Decodes the rotary encoder (interrupt on CLK) and debounces its push button, explained in detail in [docs/rotary_encoder.md](docs/rotary_encoder.md) |
+| [include/RotaryEncoder.hpp](include/RotaryEncoder.hpp) | Decodes the rotary encoder (quadrature, pin-change interrupt on both pins) and debounces its push button, explained in detail in [docs/rotary_encoder.md](docs/rotary_encoder.md) |
 | [include/LcdBuffer.hpp](include/LcdBuffer.hpp) | Shadow buffer for the 16x2 LCD, writes only the characters that changed |
 | [include/AmpChannel.hpp](include/AmpChannel.hpp) | The three amp channels (Clean, Drive, More Drive) |
 | [include/Preset.hpp](include/Preset.hpp) | The channel stored for one MIDI program, loads from and flushes to the EEPROM byte of a given program number |
 | [include/PresetLoader.hpp](include/PresetLoader.hpp) | All 128 presets in RAM plus the working buffer, dirty tracking and storing |
 | [include/OpticalRelay.hpp](include/OpticalRelay.hpp) | Drives the two photorelays, switching make-before-break |
-| [include/Led.hpp](include/Led.hpp) | On/off LED with slow/fast blinking, swelling (PWM) and a one-shot flash |
+| [include/Led.hpp](include/Led.hpp) | On/off LED with slow/fast blinking, swelling (PWM), a one-shot flash and a short wink (off, then on again) |
 | [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" toggles menu mode, Store saves a dirty preset. Also shows the working buffer: steady or swelling LED, `*` on the LCD while dirty |
 | [include/ChannelTask.hpp](include/ChannelTask.hpp) | The three channel buttons: a press switches the amp right away, holding the current channel's button for 2 s stores a dirty preset |
 | [include/Button.hpp](include/Button.hpp) | Debounced push button to GND, with hold detection (channel buttons, Store, the encoder's "Enter") |

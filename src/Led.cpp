@@ -60,6 +60,13 @@ void Led::swell()
     }
 }
 
+void Led::wink(unsigned duration)
+{
+    start(led_wink);
+    duration_ = duration;
+    digitalWrite(pin_, LOW);
+}
+
 void Led::flash(unsigned duration)
 {
     start(led_flash_once);
@@ -81,6 +88,12 @@ void Led::run()
         TASK_SLEEP(duration_);
         digitalWrite(pin_, LOW);
         status_ = led_off;
+    }
+    else if (status_ == led_wink)
+    {
+        TASK_SLEEP(duration_);
+        digitalWrite(pin_, HIGH);
+        status_ = led_on;
     }
     else if (status_ == led_swell)
     {

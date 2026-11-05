@@ -13,7 +13,10 @@
 #endif
 
 // The two photorelays on the amp's footswitch line: relay 1 (channel) and
-// relay 2 (gain). A pin driven HIGH turns its relay ON (closed).
+// relay 2 (gain). Each pin drives its relay's input LED directly, through a
+// series resistor to GND: HIGH turns the relay ON (closed), LOW turns it OFF.
+// While the microcontroller is in reset or booting, the pins are Hi-Z and both
+// relays are open, so the amp sees More Drive until this class takes over.
 //
 //   Channel     OUT_CH  OUT_GAIN
 //   Clean       ON      ON (ignored by the amp)
@@ -53,8 +56,9 @@ public:
     // Not default constructible.
     OpticalRelay() = delete;
 
-    // Drives both pins HIGH before making them outputs, so the relays stay ON
-    // (Clean) through the switch from Hi-Z to output.
+    // Drives both pins HIGH before making them outputs, so they go straight
+    // from Hi-Z to HIGH and the amp reaches Clean as early as possible. Runs
+    // as a static constructor, before setup().
     OpticalRelay(byte ch_pin, byte gain_pin);
 
     // Starts switching to channel. Returns immediately.

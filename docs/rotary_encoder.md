@@ -18,213 +18,129 @@ The encoder is a bare 5-pin part (EC11 style). Its contacts only short the signa
 
 A module with its own pull-ups, like the KY-040 (CLK, DT, SW, +, GND), works too: the internal pull-ups then sit in parallel with the module's.
 
-CLK must be on D2 or D3, because those are the Nano's external-interrupt pins (INT0 and INT1). DT and SW are polled and can be on any pin.
+CLK and DT both need an interrupt, but only D2 and D3 have an external interrupt (INT0 and INT1), and DT is on D4. So the sketch uses the **pin-change interrupt** of port D instead (PCINT2, covering D0-D7), enabled only for the two encoder pins. Both pins must therefore be on port D (D0-D7). SW is polled and can be on any pin.
 
-The constructor configures the pins and reads the current CLK and DT levels as the starting point for the bounce filter (see [Step 1](#step-1-the-interrupt-handler-on_clk_change)). `setup()` attaches the interrupt itself:
+The constructor configures the pins and reads the current CLK and DT levels as the starting point for the decoder. `setup()` enables the interrupt itself:
 
 ```cpp
 static RotaryEncoder encoder{ENC_CLK_PIN, ENC_DT_PIN, ENC_SW_PIN};
-static void onEncoderClk() { encoder.on_clk_change(); }
+
+static void enablePinChangeInterrupt(uint8_t pin)
+{
+    *digitalPinToPCMSK(pin) |= bit(digitalPinToPCMSKbit(pin));
+    PCIFR = bit(digitalPinToPCICRbit(pin));  // drop a stale pending flag
+    *digitalPinToPCICR(pin) |= bit(digitalPinToPCICRbit(pin));
+}
+
+ISR(PCINT2_vect) { encoder.on_change(); }
 ...
-attachInterrupt(digitalPinToInterrupt(ENC_CLK_PIN), onEncoderClk, CHANGE);
+enablePinChangeInterrupt(ENC_CLK_PIN);
+enablePinChangeInterrupt(ENC_DT_PIN);
 ```
+
+`PCINT2_vect` fires on any edge of any enabled port D pin. The Arduino core doesn't use it (only SoftwareSerial would), and the hardware UART on D0/D1 has its own interrupt, so MIDI IN is not affected.
 
 ## Quadrature signals
 
-Inside the encoder, two contacts (CLK and DT) open and close as the shaft turns. They are offset by a quarter period, so one of them always changes first. Which one changes first tells the direction.
+Inside the encoder, two contacts (CLK and DT) open and close as the shaft turns. They are offset by a quarter period, so exactly one of them changes at a time, and which one changes first tells the direction.
 
-Turning one way, DT changes **before** CLK:
-
-```
-         ┌───────┐       ┌───────┐
-DT   ────┘       └───────┘       └────
-           ┌───────┐       ┌───────┐
-CLK  ──────┘       └───────┘       └──
-           ↑       ↑       ↑       ↑     at every CLK edge: CLK == DT
-```
-
-Turning the other way, CLK changes before DT:
+The firmware combines both levels into a 2-bit code, `(DT << 1) | CLK`. Turning the shaft walks this code through a **Gray-code cycle**, where neighbouring codes differ in one bit:
 
 ```
-           ┌───────┐       ┌───────┐
-DT   ──────┘       └───────┘       └──
-         ┌───────┐       ┌───────┐
-CLK  ────┘       └───────┘       └────
-         ↑       ↑       ↑       ↑       at every CLK edge: CLK != DT
+      detent                          detent
+DT   ──────┐               ┌──────────────
+           └───────────────┘
+CLK  ──────────┐               ┌──────────
+               └───────────────┘
+code    11   10      00      01     11        -1 way: 11 → 10 → 00 → 01 → 11
 ```
 
-So the firmware only needs to look at the moment CLK changes, rising or falling, and compare the two levels:
-
-| At a CLK edge | Symbol | Direction |
-|---------------|--------|-----------|
-| CLK == DT | 2 | +1 |
-| CLK != DT | 1 | −1 |
+The +1 way runs the same cycle backwards: `11 → 01 → 00 → 10 → 11`.
 
 Which of the two is clockwise depends on how the module is wired. If right and left come out reversed, swap the CLK and DT wires.
 
-Between two CLK edges, DT changes exactly once. That is the key to the bounce filter below.
+At rest in a detent, both contacts are open, so both pins read HIGH on the pull-ups: code `11`. One click is one full cycle, four transitions.
 
 ## Overview
 
 ```mermaid
 flowchart LR
-    CLK["CLK edge<br>(interrupt)"] --> ISR["on_clk_change()<br>bounce filter"]
-    ISR -- "symbol 1 or 2" --> SM["transition()<br>state machine"]
-    SM -- "-1, 0, +1" --> M["moved_<br>(latch)"]
+    E["CLK or DT edge<br>(pin-change interrupt)"] --> ISR["on_change()<br>Gray-code table"]
+    ISR -- "+1, 0, -1" --> S["sub_steps_"]
+    S -- "settled at detent" --> M["moved_<br>(counter)"]
     M -- "moved()" --> T["EncoderTask::run()<br>(main loop)"]
     SW["SW pin"] -- "Button<br>debounce" --> T
 ```
 
-`on_clk_change()` and `transition()` run in **interrupt context**, on every CLK edge. `moved()`, `reset()` and `enter_pressed()` run in the **main loop**, called by `EncoderTask` on every pass. They share `moved_`, which needs some care (see [Interrupts and the main loop](#interrupts-and-the-main-loop)).
+`on_change()` runs in **interrupt context**, on every edge of either pin. `moved()`, `reset()` and `enter_pressed()` run in the **main loop**, called by `EncoderTask` on every pass. They share `moved_`, which needs some care (see [Interrupts and the main loop](#interrupts-and-the-main-loop)).
 
-## Step 1: the interrupt handler, `on_clk_change()`
+## The interrupt handler, `on_change()`
 
 ```cpp
-void RotaryEncoder::on_clk_change()
+void RotaryEncoder::on_change()
 {
-    uint8_t clk = digitalRead(clk_pin_);
-    uint8_t dta = digitalRead(dta_pin_);
-    if (clk != clk_last_)
+    uint8_t code = read_code();                       // (DT << 1) | CLK
+    state_ = ((state_ << 2) | code) & 0x0f;           // (previous << 2) | current
+    sub_steps_ += movements[state_];
+
+    if (code == DETENT_CODE)
     {
-        clk_last_ = clk;
-        if (dta != dta_last_)
-        {
-            dta_last_ = dta;
-            transition(clk == dta ? 2 : 1);
-        }
+        if (sub_steps_ >= 2 && moved_ < INT8_MAX)        ++moved_;
+        else if (sub_steps_ <= -2 && moved_ > -INT8_MAX) --moved_;
+        sub_steps_ = 0;
     }
-}
-```
-
-Mechanical contacts bounce: for a millisecond or so after the contact closes or opens, the level flips back and forth, and every flip fires the interrupt. The handler filters this with two checks:
-
-1. **Did CLK really change?** `clk != clk_last_` drops interrupts where CLK already bounced back to its previous level by the time the handler reads it.
-2. **Did DT change since the last counted edge?** In a real rotation, DT changes exactly once between two CLK edges. While CLK bounces, DT stays put, so `dta != dta_last_` is false for every bounce after the first counted edge.
-
-Only when both are true is the edge counted. `clk_last_` and `dta_last_` then hold the levels at that edge, and the direction symbol goes to `transition()`.
-
-Before the first edge, `clk_last_` and `dta_last_` hold the levels the constructor read from the pins. That matters: if they started at a fixed 0 while both lines idle HIGH, the first CLK edge (falling to 0) would look like "no change", and the second one wouldn't count either because DT would seem unchanged. The first turn after power-up would then be lost.
-
-Example: CLK bounces three times on one edge, with DT steady at 1:
-
-| CLK read | `clk != clk_last_` | `dta != dta_last_` | Result |
-|----------|--------------------|--------------------|--------|
-| 1 | yes (was 0) | yes (was 0) | **counted**, symbol 2 |
-| 0 | yes | no | ignored, but `clk_last_` = 0 |
-| 1 | yes | no | ignored, `clk_last_` = 1 |
-| 0 | yes | no | ignored |
-| 1 (settled) | yes | no | ignored |
-
-The next edge is counted only after DT has changed, which happens on the next real quarter turn.
-
-## Step 2: the state machine, `transition()`
-
-Even with the filter, an occasional wrong symbol gets through, for example when DT bounces at the moment CLK changes. `transition()` adds a second line of defence: a small state machine that remembers the last two symbols and only reports a step when the pattern makes sense.
-
-### State
-
-`state_` holds the last two symbols, two bits each:
-
-```
-state_ = (previous << 2) | current        bits 3-2: previous, bits 1-0: current
-```
-
-Symbol 0 means **idle** (nothing pending). It only appears as the previous symbol, after the state machine resets itself. Symbol 3 never occurs.
-
-```cpp
-state_ = ((state_ << 2) | direction) & 0x0f;   // shift in the new symbol, keep two
-moved_ += movements[state_];
-if (moved_ == 0) {
-    state_ = 0;                                // back to idle
 }
 ```
 
 ### The `movements` table
 
-`movements[state_]` says what the pair (previous, current) adds to `moved_`. It is a 4×4 table, written in the code with one row per previous symbol:
+`state_` holds the previous and the current code, two bits each, so it is an index from 0 to 15 into a 4×4 table, with one row per previous code:
 
 ```cpp
 static const int8_t movements[16] = {
-//  current:   0   1   2   3      previous:
-               0, -1, +1,  0,  // 0 (idle)
-               0,  0, +1,  0,  // 1
-               0, -1,  0,  0,  // 2
-               0,  0,  0,  0,  // 3 (never occurs)
+//  current:  00  01  10  11      previous:
+               0, -1, +1,  0,  // 00
+              +1,  0,  0, -1,  // 01
+              -1,  0,  0, +1,  // 10
+               0, +1, -1,  0,  // 11
 };
 ```
 
-Only four entries matter:
+| Transition | Adds | Meaning |
+|------------|------|---------|
+| one bit changed, along the −1 cycle | −1 | a quarter step the −1 way |
+| one bit changed, along the +1 cycle | +1 | a quarter step the +1 way |
+| no change (diagonal) | 0 | the interrupt fired, but the level bounced back before it was read |
+| both bits changed (anti-diagonal: `00 ↔ 11`, `01 ↔ 10`) | 0 | an edge was missed, so the direction is unknown |
 
-| Previous | Current | Adds | Meaning |
-|----------|---------|------|---------|
-| 0 (idle) | 1 | −1 | first edge after idle: **latch** −1 |
-| 0 (idle) | 2 | +1 | first edge after idle: **latch** +1 |
-| 1 | 1 | 0 | still turning the −1 way: already latched, don't count again |
-| 2 | 2 | 0 | still turning the +1 way: already latched |
-| 1 | 2 | +1 | direction reversed: **cancels** the −1 |
-| 2 | 1 | −1 | direction reversed: **cancels** the +1 |
+### Bounce
 
-A pair only adds something right after idle (latch) or when the direction reverses (cancel). So `moved_` never leaves the range −1 to +1: it is a **latch**, not a counter.
+Contact bounce makes one pin flip back and forth for a millisecond or so, while the other pin stays put. In the code, that is a walk back and forth between two neighbouring codes, so its +1s and −1s cancel out. No separate bounce filter is needed.
 
-### All states
+### Settling at the detent
 
-Together with `moved_` and the reads by `moved()`, this gives five states:
+The quarter steps add up in `sub_steps_`. Each time the code arrives at the detent (`11`), they are settled and `sub_steps_` is cleared:
 
-```mermaid
-stateDiagram-v2
-    direction LR
-    Idle --> PendingMinus: symbol 1
-    Idle --> PendingPlus: symbol 2
-    PendingMinus --> PendingMinus: symbol 1
-    PendingMinus --> Idle: symbol 2 (cancel)
-    PendingPlus --> PendingPlus: symbol 2
-    PendingPlus --> Idle: symbol 1 (cancel)
-    PendingMinus --> SpentMinus: moved() returns -1
-    PendingPlus --> SpentPlus: moved() returns +1
-    SpentMinus --> Idle: symbol 1
-    SpentMinus --> PendingPlus: symbol 2
-    SpentPlus --> Idle: symbol 2
-    SpentPlus --> PendingMinus: symbol 1
-    PendingMinus: Pending −1 (moved_ = −1)
-    PendingPlus: Pending +1 (moved_ = +1)
-    SpentMinus: Spent −1 (read, moved_ = 0)
-    SpentPlus: Spent +1 (read, moved_ = 0)
-    Idle: Idle (state_ = 0, moved_ = 0)
-```
+| `sub_steps_` at the detent | Meaning | Step |
+|----------------------------|---------|------|
+| +4 / −4 | a full click | +1 / −1 |
+| ±3, ±2 | a full click with one missed edge | +1 / −1 |
+| ±1, 0 | turned partway and back, or wiggled around the detent | none |
 
-"Spent" means the main loop has read the step: `moved()` cleared `moved_`, but leaves `state_` alone, so the previous symbol is still remembered. From there:
-
-- One more edge in the **same** direction only re-arms: it goes back to idle without reporting anything.
-- An edge in the **opposite** direction is reported right away, so changing direction feels immediate.
+Settling at the detent, rather than counting every four quarter steps, keeps the steps aligned with the clicks: after a missed edge, the count is corrected at the next detent instead of staying one quarter off for good.
 
 ### Examples
 
-Turning the −1 way, with the main loop reading after every edge (the normal case, since `EncoderTask` polls thousands of times per second):
-
-| Edge | Pair | `moved_` | Then |
-|------|------|----------|------|
-| 1 | (0,1) | −1 | `moved()` returns −1, `moved_` = 0 |
-| 2 | (1,1) | 0 | back to idle, nothing reported |
-| 3 | (0,1) | −1 | `moved()` returns −1 |
-| 4 | (1,1) | 0 | back to idle |
-
-So continuous rotation yields **one step per two counted CLK edges**.
-
-A bounce that flips the direction for a single edge cancels itself:
-
-| Edge | Pair | `moved_` | Then |
-|------|------|----------|------|
-| 1 | (0,1) | −1 | |
-| 2 | (1,2) | 0 | back to idle, nothing reported |
+| Codes after the detent | Quarter steps | `sub_steps_` at `11` | Step |
+|------------------------|---------------|----------------------|------|
+| `10 00 01 11` | −1 −1 −1 −1 | −4 | −1 |
+| `10 11 10 11 10 00 01 00 01 11` (bounce on CLK, then on DT) | | −4 | −1 |
+| `10 01 11` (missed `00`) | −1 0 −1 | −2 | −1 |
+| `10 00 10 11` (half a click and back) | −1 −1 +1 +1 | 0 | none |
 
 ### Steps per detent
 
-The encoder clicks into detents as it turns. One step per two CLK edges equals one step per full CLK cycle. Whether that is one step per detent depends on the module:
-
-- Many encoders have as many pulses as detents (for example 20 and 20 per turn). Each detent is one full CLK cycle, so **one step per detent**.
-- Some variants have twice as many detents as pulses (for example 30 detents, 15 pulses). There, CLK changes once per detent, so it takes **two detents per step**.
-
-If the program changes only every other click, the module is the second kind. `transition()` would then need to report on every counted edge.
+This assumes one full Gray-code cycle per detent, with the detent at `11`, which is the common EC11 type (for example 20 pulses and 20 detents per turn). Some variants have twice as many detents as pulses and also rest at `00`. With those, it takes **two clicks per step**, since only `11` is settled. If the program changes only every other click, settle at `00` as well.
 
 ## Reading the result: `moved()` and `reset()`
 
@@ -246,7 +162,7 @@ int RotaryEncoder::reset()
 }
 ```
 
-`moved()` returns −1, 0 or +1 and clears the latch. Because `moved_` is a latch, a pending step is reported only once, however many edges arrive before the main loop reads it. The main loop must therefore poll **often**. If it polls too rarely while the encoder spins fast, steps get lost: four edges between two reads still give at most one step. `EncoderTask` polls on every loop pass, and nothing in the firmware blocks (see [Task.hpp](../include/Task.hpp)), so this doesn't happen in practice.
+`moved_` is a **counter**: it adds up the steps until the main loop reads them, clamped to −127…+127. `moved()` returns them, negative for the −1 way, and clears the counter. So a slow main loop pass doesn't lose steps. It just gets several at once, and `EncoderTask` moves that many programs.
 
 ## Interrupts and the main loop
 
@@ -256,9 +172,9 @@ The interrupt handler writes `moved_`, and the main loop reads and clears it. Th
 |------|-----|
 | `volatile` on all members the ISR touches | The compiler must re-read them from RAM every time, instead of keeping a stale copy in a register. |
 | `moved_` is an `int8_t` | The ATmega328P is an 8-bit CPU. A 2-byte `int` takes two instructions to read, and the interrupt could change it in between. Going from −1 (`0xFFFF`) to 0, the main loop could then see `0x00FF` = 255. One byte is read in a single instruction, so a value can't be half-updated. This also makes the quick `moved_ ? ... : 0` check in `moved()` safe. |
-| `ATOMIC_BLOCK` in `reset()` | Reading and clearing are two steps. Without the block, an edge arriving between them would be overwritten by the clear and lost. The block (from avr-libc's `<util/atomic.h>`) disables interrupts for those two instructions. `ATOMIC_RESTORESTATE` re-enables them afterwards only if they were enabled before. An edge that arrives meanwhile is not lost: the interrupt flag stays set and the handler runs right after the block. |
+| `ATOMIC_BLOCK` in `reset()` | Reading and clearing are two steps. Without the block, a step arriving between them would be overwritten by the clear and lost. The block (from avr-libc's `<util/atomic.h>`) disables interrupts for those two instructions. `ATOMIC_RESTORESTATE` re-enables them afterwards only if they were enabled before. An edge that arrives meanwhile is not lost: the interrupt flag stays set and the handler runs right after the block. |
 
-`state_`, `clk_last_` and `dta_last_` are only ever touched by the handler, so they need no extra protection.
+`state_` and `sub_steps_` are only ever touched by the handler (and the constructor, before the interrupt is enabled), so they need no extra protection.
 
 The handler itself is short, two `digitalRead()` calls and a table lookup, a few microseconds in total. That matters, because while it runs, other interrupts (`millis()`, the UART receiving MIDI) wait.
 
@@ -316,4 +232,4 @@ So `enter_pressed()` returns `true` exactly once per press, 30 ms after the cont
 
 - **Direction depends on wiring.** Swap CLK and DT if needed (see [Quadrature signals](#quadrature-signals)).
 - **Steps per detent depend on the module.** See [Steps per detent](#steps-per-detent).
-- **Fast spinning with slow polling loses steps**, because `moved_` is a latch. Not an issue with the current non-blocking main loop.
+- **Both pins must be on port D (D0-D7)**, because the sketch uses the PCINT2 pin-change interrupt.
