@@ -1,83 +1,134 @@
 #include <Arduino.h>
-#include "coop.h"
-#include "led.h"
+#include <LiquidCrystal_I2C.h>
 
-// Sandbox: a dimmable LED on pin 9 (via 220-330 ohm resistor to GND) driven by
-// a demo task, all without delay().
-//  - DemoTask walks the LED through fade, brightness steps, blink and breathe,
-//    announcing each phase on the serial port.
-//  - StatsTask prints once a second how many times loop() ran, proving that
-//    nothing blocks.
+#include "Task.hpp"
+#include "Button.hpp"
+#include "Led.hpp"
+#include "RotaryEncoder.hpp"
+#include "LcdBuffer.hpp"
+#include "OpticalRelay.hpp"
+#include "StatsTask.hpp"
+#include "EncoderTask.hpp"
+#include "PresetLoader.hpp"
+#include "ChannelTask.hpp"
 
-static uint32_t loopCount = 0;
+// Sandbox: everything runs as cooperative tasks, without delay().
+//  - StatsTask prints how often loop() ran per second, proving that nothing
+//    blocks. Off by default; turn it on with -DSTATS_INTERVAL_S=10.
+//  - PresetLoader loads all presets from EEPROM at startup and selects
+//    program 1.
+//  - EncoderTask browses the presets with a rotary encoder (bare, no
+//    pull-ups: A/CLK on pin 2, B/DT on pin 4, SW on pin 5, C and the other SW
+//    pin to GND): each step selects
+//    the next or previous program and switches the amp to its channel through
+//    the OpticalRelay. The program is shown on a 16x2 I2C LCD (SDA on A4, SCL
+//    on A5, address LCD_I2C_ADDR). Pressing "enter" toggles the (still empty)
+//    menu mode. The "Store" button (A3, to GND) stores a dirty preset.
+//  - ChannelTask reads the Clean, Drive and More Drive buttons (A0-A2, to
+//    GND): a press switches the amp to that channel, the LED swells while the
+//    preset differs from the stored one, holding the button 2 s stores it.
+//  - Red, green and yellow on/off LEDs (each via 220-330 ohm resistor to GND)
+//    show the selected channel.
+//  - OUT_CH and OUT_GAIN drive the TLP222A input LEDs directly (390 ohm in
+//    series, cathode to GND). On the prototype, plain LEDs (220-330 ohm to
+//    GND) take their place: lit = relay ON.
 
-static Led led(9);
+// Pin assignments.
+#define ENC_CLK_PIN     2  // Rotary encoder CLK pin (clock signal)
+#define ENC_DT_PIN      4  // Rotary encoder DT pin (data)
+#define ENC_SW_PIN      5  // Rotary encoder SW pin (push button)
+#define OUT_CH_PIN      7  // Relay 1 LED (channel), HIGH = relay ON
+#define OUT_GAIN_PIN    8  // Relay 2 LED (gain), HIGH = relay ON
+#define RED_LED_PIN     9  // Red LED pin ("More Drive")
+#define YELLOW_LED_PIN 10  // Yellow LED pin ("Drive")
+#define GREEN_LED_PIN  11  // Green LED pin ("Clean")
+#define BTN_CLEAN_PIN  A0  // "Clean" button, to GND (INPUT_PULLUP)
+#define BTN_DRIVE_PIN  A1  // "Drive" button, to GND (INPUT_PULLUP)
+#define BTN_MORE_PIN   A2  // "More Drive" button, to GND (INPUT_PULLUP)
+#define BTN_STORE_PIN  A3  // "Store" button next to the encoder, to GND
 
-class DemoTask : public Task {
-public:
-  void run() override {
-    TASK_BEGIN();
-    for (;;) {
-      Serial.println(F("fade up"));
-      led.fadeTo(255, 1500);
-      TASK_WAIT_UNTIL(led.isIdle());
+// LCD on I2C, default address 0x27 (A0-A2 not jumpered).
+#define LCD_I2C_ADDR 0x27
 
-      Serial.println(F("fade down"));
-      led.fadeTo(0, 1500);
-      TASK_WAIT_UNTIL(led.isIdle());
+// UART speed: the MIDI baud rate. MIDI IN uses RX, Serial.print() uses TX, so
+// the serial monitor has to run at the same rate (monitor_speed).
+#define SERIAL_BAUD 31250
 
-      Serial.println(F("steps 0..252"));
-      for (i_ = 0; i_ <= 4; ++i_) {
-        led.set(i_ * 63);
-        TASK_SLEEP(500);
-      }
+// LED instances: red, green and yellow LEDs specified above.
+static Led led_red{RED_LED_PIN};
+static Led led_green{GREEN_LED_PIN};
+static Led led_yellow{YELLOW_LED_PIN};
 
-      Serial.println(F("blink"));
-      led.blink(100, 300);
-      TASK_SLEEP(2000);
+// Rotary encoder instance: CLK, DT and SW pins specified above.
+static RotaryEncoder encoder{ENC_CLK_PIN, ENC_DT_PIN, ENC_SW_PIN};
 
-      Serial.println(F("breathe"));
-      led.breathe(2000);
-      TASK_SLEEP(6000);
+// "Store" button: stores a dirty preset, or confirms settings in menu mode.
+static Button store_button{BTN_STORE_PIN};
 
-      led.fadeTo(0, 300);
-      TASK_WAIT_UNTIL(led.isIdle());
-      TASK_SLEEP(1000);
-    }
-    TASK_END();
-  }
+// Channel buttons: Clean, Drive and More Drive.
+static Button clean_button{BTN_CLEAN_PIN};
+static Button drive_button{BTN_DRIVE_PIN};
+static Button more_button{BTN_MORE_PIN};
 
-private:
-  uint8_t i_;  // loop counter must be a member: locals are lost on yield
-};
+// Optical relay instance: channel and gain pins specified above.
+static OpticalRelay relay{OUT_CH_PIN, OUT_GAIN_PIN};
 
-class StatsTask : public Task {
-public:
-  void run() override {
-    TASK_BEGIN();
-    for (;;) {
-      TASK_SLEEP(1000);
-      Serial.print(F("t="));
-      Serial.print(millis());
-      Serial.print(F(" ms, loop passes/s="));
-      Serial.println(loopCount);
-      loopCount = 0;
-    }
-    TASK_END();
-  }
-};
+// All presets in RAM plus the working buffer, loaded from EEPROM in setup().
+static PresetLoader presets;
 
-static DemoTask demo;
+static LiquidCrystal_I2C lcd{LCD_I2C_ADDR, LCD_COLS, LCD_ROWS};
+static LcdBuffer lcd_buffer{&lcd};
+
+// The encoder needs an interrupt on both CLK and DT, but on the Nano only pins
+// 2 and 3 have external interrupts. So it uses the pin-change interrupt of
+// port D (PCINT2, pins 0-7), enabled for the two encoder pins only. Both pins
+// must be on port D, otherwise the ISR below doesn't fire for them.
+static void enablePinChangeInterrupt(uint8_t pin)
+{
+    *digitalPinToPCMSK(pin) |= bit(digitalPinToPCMSKbit(pin));
+    PCIFR = bit(digitalPinToPCICRbit(pin));  // drop a stale pending flag
+    *digitalPinToPCICR(pin) |= bit(digitalPinToPCICRbit(pin));
+}
+
+// Pin-change interrupt for port D: an edge on CLK or DT.
+ISR(PCINT2_vect) { encoder.on_change(); }
+
+// Stats task instance: keeps track of various statistics.
 static StatsTask stats;
-static Task* tasks[] = {&demo, &led, &stats};
+
+// Encoder task instance: handles the rotary encoder and related buttons, updates the LCD and LEDs accordingly.
+static EncoderTask encoderTask {
+    encoder, store_button, presets,
+    relay,lcd_buffer,
+    led_green, led_yellow, led_red
+};
+
+// Channel task instance: the three channel buttons, displayed through
+// encoderTask.
+static ChannelTask channelTask {
+    clean_button, drive_button, more_button, presets, encoderTask
+};
+
+// Array of all tasks to be run in the main loop.
+static Task* tasks[] = {
+    &relay,
+    &led_red, &led_green, &led_yellow,
+    &stats, &encoderTask, &channelTask
+};
 
 void setup() {
-  Serial.begin(9600);
-  Serial.println(F("led sandbox started"));
-  led.begin();
+    Serial.begin(SERIAL_BAUD);
+    Serial.println(F("fenderswitch started"));
+    lcd.init();
+    lcd.backlight();
+    lcd_buffer.update(0, "fenderswitch    ");
+    presets.begin();
+    encoderTask.apply();
+    enablePinChangeInterrupt(ENC_CLK_PIN);
+    enablePinChangeInterrupt(ENC_DT_PIN);
 }
 
 void loop() {
-  ++loopCount;
-  runTasks(tasks);
+    stats.count();
+    runTasks(tasks);
 }

@@ -14,22 +14,22 @@
 
 class Task {
 public:
-  virtual void run() = 0;
+    virtual void run() = 0;
 
-  // Called by the scheduler: runs the task once it is no longer sleeping.
-  void tick(uint32_t now) {
-    if ((int32_t)(now - wakeAt_) >= 0) run();
-  }
+    // Called by the scheduler: runs the task once it is no longer sleeping.
+    void tick(uint32_t now) {
+        if (static_cast<int32_t>(now - wakeAt_) >= 0) run();
+    }
 
 protected:
-  // Abandon the current position: the next run() starts again at TASK_BEGIN.
-  void restart() {
-    lc_ = 0;
-    wakeAt_ = millis();
-  }
+    // Abandon the current position: the next run() starts again at TASK_BEGIN.
+    void restart() {
+        lc_ = 0;
+        wakeAt_ = millis();
+    }
 
-  uint16_t lc_ = 0;      // resume point (source line of the last yield)
-  uint32_t wakeAt_ = 0;  // millis() timestamp before which run() is not called
+    uint16_t lc_ = 0;      // resume point (source line of the last yield)
+    uint32_t wakeAt_ = 0;  // millis() timestamp before which run() is not called
 };
 
 #define TASK_BEGIN() switch (lc_) { case 0:
@@ -37,19 +37,19 @@ protected:
 
 // Give other tasks a turn, continue on the next pass.
 #define TASK_YIELD() \
-  do { lc_ = __LINE__; return; case __LINE__:; } while (0)
+    do { lc_ = __LINE__; return; case __LINE__:; } while (0)
 
 // Sleep without blocking other tasks.
 #define TASK_SLEEP(ms) \
-  do { wakeAt_ = millis() + (ms); lc_ = __LINE__; return; case __LINE__:; } while (0)
+    do { wakeAt_ = millis() + (ms); lc_ = __LINE__; return; case __LINE__:; } while (0)
 
 // Poll a condition each pass until it becomes true.
 #define TASK_WAIT_UNTIL(cond) \
-  do { lc_ = __LINE__; case __LINE__: if (!(cond)) return; } while (0)
+    do { lc_ = __LINE__; case __LINE__: if (!(cond)) return; } while (0)
 
 // Round-robin over a fixed list of tasks; call from loop().
 template <size_t N>
 inline void runTasks(Task* (&tasks)[N]) {
-  uint32_t now = millis();
-  for (size_t i = 0; i < N; ++i) tasks[i]->tick(now);
+    uint32_t now = millis();
+    for (size_t i = 0; i < N; ++i) tasks[i]->tick(now);
 }

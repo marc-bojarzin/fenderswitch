@@ -1,0 +1,8 @@
+# circuit-synth intermediates
+fenderswitch/fenderswitch.json
+fenderswitch/fenderswitch.net
+# KiCad per-user and backup files
+*.kicad_prl
+*-backups/
+fp-info-cache
+*.lck
