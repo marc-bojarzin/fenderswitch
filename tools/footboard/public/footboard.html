@@ -1,0 +1,371 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>MIDI Footboard</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body { padding: 16px; }
+  main { max-width: 720px; margin: 0 auto; }
+
+  /* Program number on a 3-digit LED display, as on hardware footboards. */
+  .readout { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  .seg {
+    background: var(--seg-bg);
+    border-radius: 6px;
+    padding: 10px 12px;
+    display: flex;
+    gap: 6px;
+  }
+  .seg svg { width: clamp(28px, 8vw, 40px); height: auto; display: block; overflow: visible; }
+  .seg polygon { fill: var(--seg-on); opacity: 0.1; transition: opacity 0.08s; }
+  .seg polygon.lit { opacity: 1; filter: drop-shadow(0 0 3px var(--seg-on)); }
+  .readout-info { display: flex; flex-direction: column; gap: 2px; font-size: 0.85rem; color: var(--muted); }
+  .readout-info strong { color: var(--text); font-size: 1rem; }
+
+  .switches { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .slot { display: flex; flex-direction: column; align-items: center; gap: 8px; min-width: 0; }
+  /* Status LED above each switch: lit on the last one pressed. */
+  .slot .led { width: 12px; height: 12px; border-radius: 50%; background: var(--off); transition: background 0.1s, box-shadow 0.1s; }
+  .slot.active .led { background: var(--led-on); box-shadow: 0 0 10px var(--led-on); }
+  .footswitch .num { font-size: clamp(1.2rem, 6vw, 2rem); font-weight: 700; font-variant-numeric: tabular-nums; line-height: 1.1; }
+  .footswitch .key { font-size: 0.65rem; opacity: 0.75; }
+  /* Phones have no keyboard: drop the key hint, it crowds the number. */
+  @media (max-width: 480px) { .footswitch .key { display: none; } }
+
+  .bank-row { display: flex; justify-content: space-between; gap: 12px; }
+  .bank-btn { border-radius: 999px; padding: 8px 18px; font-weight: 600; }
+
+  .direct { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .direct label { color: var(--muted); font-size: 0.9rem; }
+  .direct input {
+    font: inherit;
+    width: 6em;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 2px solid var(--switch-ring);
+    background: var(--bg);
+    color: var(--text);
+  }
+  .direct button { border-radius: 8px; padding: 6px 14px; }
+
+  /* ---- Brushed aluminium enclosure -------------------------------------
+     The footboard is a physical object, so it stays aluminium in dark mode. */
+  .alu {
+    --alu-text: #2b2e32;
+    --alu-muted: #4b5157;
+    --alu-edge: #858b92;
+    position: relative;
+    padding: 26px 24px 22px;
+    color: var(--alu-text);
+    border: 1px solid var(--alu-edge);
+    border-radius: 16px;
+    background:
+      /* fine brush grooves, irregular through three periods */
+      repeating-linear-gradient(180deg, rgba(255,255,255,0.10) 0 1px, transparent 1px 3px),
+      repeating-linear-gradient(180deg, rgba(0,0,0,0.035) 0 1px, transparent 1px 7px),
+      repeating-linear-gradient(180deg, rgba(255,255,255,0.05) 0 2px, transparent 2px 11px),
+      /* sheen */
+      linear-gradient(180deg, #eef0f2 0%, #d3d7db 30%, #bfc4c9 52%, #cdd1d5 70%, #e4e7ea 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.9),
+      inset 0 -2px 0 rgba(0,0,0,0.18),
+      inset 1px 0 0 rgba(255,255,255,0.5),
+      inset -1px 0 0 rgba(0,0,0,0.08),
+      0 8px 22px rgba(0,0,0,0.28);
+  }
+
+  /* Corner screws: domed head with a slot. */
+  .screw {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 35% 30%, #fdfdfd 0%, #c4c9ce 45%, #7c838a 100%);
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.35), inset 0 -1px 1px rgba(0,0,0,0.3);
+  }
+  .screw::after {
+    content: "";
+    position: absolute;
+    left: 2px; right: 2px; top: 5px;
+    height: 2px;
+    background: #5a6066;
+    border-radius: 1px;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.6);
+  }
+  .screw.tl { top: 8px; left: 8px; transform: rotate(35deg); }
+  .screw.tr { top: 8px; right: 8px; transform: rotate(-20deg); }
+  .screw.bl { bottom: 8px; left: 8px; transform: rotate(80deg); }
+  .screw.br { bottom: 8px; right: 8px; transform: rotate(10deg); }
+
+  /* Engraved lettering. */
+  .alu .plate h1 { color: #33373c; text-shadow: 0 1px 0 rgba(255,255,255,0.75), 0 -1px 0 rgba(0,0,0,0.12); }
+  .alu .sub, .alu .readout-info span, .alu .hint, .alu .direct label { color: var(--alu-muted); text-shadow: 0 1px 0 rgba(255,255,255,0.6); }
+  .alu .readout-info strong { color: var(--alu-text); text-shadow: 0 1px 0 rgba(255,255,255,0.6); }
+  .alu .error { color: #a3221b; }
+
+  /* Display window with a dark bezel. */
+  .alu .seg {
+    border: 2px solid #4d5258;
+    box-shadow: inset 0 3px 8px rgba(0,0,0,0.85), 0 1px 0 rgba(255,255,255,0.8);
+  }
+
+  /* Chrome-rimmed status LEDs. */
+  .alu .slot .led {
+    background: #5a1410;
+    box-shadow: 0 0 0 2px #e3e6e9, 0 0 0 3px #7a8087, inset 0 1px 2px rgba(0,0,0,0.6);
+  }
+  .alu .slot.active .led {
+    background: radial-gradient(circle at 40% 35%, #ffd2c8 0%, #ff3b2f 45%, #b51d14 100%);
+    box-shadow: 0 0 0 2px #e3e6e9, 0 0 0 3px #7a8087, 0 0 12px 3px rgba(255,59,47,0.7);
+  }
+
+  /* Footswitches: round, in the same brushed style as the bank buttons. */
+  .alu .switches { gap: 16px; padding: 4px 8px; }
+  .alu .slot { gap: 12px; }
+  .alu .footswitch {
+    width: min(100%, 120px);
+    aspect-ratio: 1;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    padding: 0;
+    color: #23262a;
+    border: 1px solid #7d838a;
+    background:
+      repeating-linear-gradient(180deg, rgba(255,255,255,0.12) 0 1px, transparent 1px 3px),
+      linear-gradient(180deg, #f6f7f8 0%, #d2d6da 55%, #b8bdc2 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 2px 4px rgba(0,0,0,0.25);
+  }
+  .alu .footswitch:active:not(:disabled) {
+    background: linear-gradient(180deg, #b8bdc2 0%, #d2d6da 100%);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+  }
+  .alu .footswitch .num { color: #23262a; text-shadow: 0 1px 0 rgba(255,255,255,0.75); }
+  .alu .footswitch .key { color: #4b5157; }
+
+  /* Small brushed buttons and the entry field. */
+  .alu .bank-btn, .alu .direct button {
+    color: #23262a;
+    border: 1px solid #7d838a;
+    background:
+      repeating-linear-gradient(180deg, rgba(255,255,255,0.12) 0 1px, transparent 1px 3px),
+      linear-gradient(180deg, #f6f7f8 0%, #d2d6da 55%, #b8bdc2 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9), 0 2px 4px rgba(0,0,0,0.25);
+  }
+  .alu .bank-btn:active, .alu .direct button:active {
+    background: linear-gradient(180deg, #b8bdc2 0%, #d2d6da 100%);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
+  }
+  .alu .direct input {
+    color: #1f2226;
+    background: #f5f6f7;
+    border: 1px solid #7d838a;
+    box-shadow: inset 0 2px 3px rgba(0,0,0,0.25);
+  }
+</style>
+</head>
+<body>
+<main>
+  <section class="device alu" aria-label="MIDI footboard">
+    <span class="screw tl" aria-hidden="true"></span><span class="screw tr" aria-hidden="true"></span>
+    <span class="screw bl" aria-hidden="true"></span><span class="screw br" aria-hidden="true"></span>
+    <div class="plate">
+      <h1>MIDI Footboard</h1>
+      <span class="sub" id="config">MIDI out</span>
+    </div>
+
+    <div class="readout">
+      <div class="seg" id="seg" role="img" aria-live="polite" aria-label="Program: none"></div>
+      <div class="readout-info">
+        <strong id="bank-label">Bank 1</strong>
+        <span id="bank-range">Programs 1–4</span>
+      </div>
+    </div>
+
+    <div class="switches" id="switches"></div>
+
+    <div class="bank-row">
+      <button class="bank-btn" id="bank-down" aria-label="Previous bank">◀ Bank</button>
+      <button class="bank-btn" id="bank-up" aria-label="Next bank">Bank ▶</button>
+    </div>
+
+    <form class="direct" id="direct">
+      <label for="direct-input">Program</label>
+      <input id="direct-input" type="number" min="1" max="128" inputmode="numeric" placeholder="1–128" required>
+      <button type="submit">Send</button>
+    </form>
+
+    <p class="error" id="error"></p>
+    <p class="hint">Keys: 1–4 footswitches, ← → bank. Sends Program Change only, nothing comes back.</p>
+  </section>
+</main>
+
+<script>
+  const SWITCHES = 4;
+  const PROGRAMS = 128;
+  const BANKS = PROGRAMS / SWITCHES;
+
+  const errorEl = document.getElementById('error');
+
+  let bank = 0;
+  // The program this footboard sent last. A footboard only knows what it
+  // sent, not what the receiver did with it.
+  let sent = null;
+
+  function loadBank() {
+    try { return Number(localStorage.getItem('footboard.bank')) || 0; } catch { return 0; }
+  }
+  function saveBank() {
+    try { localStorage.setItem('footboard.bank', String(bank)); } catch { /* ignore */ }
+  }
+
+  // 3-digit 7-segment display. Segments a-g, in a 40 x 70 box, slanted.
+  const SEGMENTS = {
+    a: [[8, 2], [32, 2], [28, 7], [12, 7]],
+    b: [[33, 3], [33, 33], [30, 35], [28, 32], [28, 8]],
+    c: [[33, 37], [33, 67], [28, 62], [28, 38], [30, 35]],
+    d: [[8, 68], [32, 68], [28, 63], [12, 63]],
+    e: [[7, 37], [10, 35], [12, 38], [12, 62], [7, 67]],
+    f: [[7, 3], [12, 8], [12, 32], [10, 35], [7, 33]],
+    g: [[10, 35], [13, 32.5], [27, 32.5], [30, 35], [27, 37.5], [13, 37.5]],
+  };
+  const GLYPHS = {
+    '0': 'abcdef', '1': 'bc', '2': 'abdeg', '3': 'abcdg', '4': 'bcfg',
+    '5': 'acdfg', '6': 'acdefg', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg',
+    '-': 'g', ' ': '',
+  };
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const segEl = document.getElementById('seg');
+  const digits = [];
+  for (let i = 0; i < 3; i++) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 40 70');
+    svg.setAttribute('aria-hidden', 'true');
+    const parts = {};
+    for (const [name, points] of Object.entries(SEGMENTS)) {
+      const poly = document.createElementNS(SVG_NS, 'polygon');
+      // Slant like a real display: shift the top to the right.
+      poly.setAttribute('points', points.map(([x, y]) => `${x + (35 - y) * 0.1},${y}`).join(' '));
+      svg.appendChild(poly);
+      parts[name] = poly;
+    }
+    segEl.appendChild(svg);
+    digits.push(parts);
+  }
+
+  // Shows text (up to 3 characters, right-aligned) on the display.
+  function showSeg(text) {
+    const chars = text.padStart(3, ' ').slice(-3);
+    digits.forEach((parts, i) => {
+      const lit = GLYPHS[chars[i]] ?? '';
+      for (const [name, poly] of Object.entries(parts)) {
+        poly.classList.toggle('lit', lit.includes(name));
+      }
+    });
+  }
+
+  const slots = [];
+  const container = document.getElementById('switches');
+  for (let i = 0; i < SWITCHES; i++) {
+    const slot = document.createElement('div');
+    slot.className = 'slot';
+    slot.innerHTML = '<span class="led"></span><button class="footswitch"><span class="num"></span><span class="key"></span></button>';
+    slot.querySelector('.key').textContent = `key ${i + 1}`;
+    slot.querySelector('button').addEventListener('click', () => send(bank * SWITCHES + i + 1));
+    container.appendChild(slot);
+    slots.push(slot);
+  }
+
+  function render() {
+    const first = bank * SWITCHES + 1;
+    document.getElementById('bank-label').textContent = `Bank ${bank + 1}`;
+    document.getElementById('bank-range').textContent = `Programs ${first}–${first + SWITCHES - 1}`;
+    slots.forEach((slot, i) => {
+      const program = first + i;
+      slot.querySelector('.num').textContent = program;
+      slot.querySelector('button').setAttribute('aria-label', `Program ${program}`);
+      slot.classList.toggle('active', program === sent);
+    });
+    showSeg(sent === null ? '---' : String(sent));
+    segEl.setAttribute('aria-label', sent === null ? 'Program: none' : `Program ${sent}`);
+  }
+
+  function setBank(next) {
+    bank = (next + BANKS) % BANKS;
+    saveBank();
+    render();
+  }
+
+  async function send(program) {
+    errorEl.textContent = '';
+    try {
+      const res = await fetch('/api/midi/program-change', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ program }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        errorEl.textContent = body.error ?? `HTTP ${res.status}`;
+        return;
+      }
+      sent = program;
+      render();
+    } catch (err) {
+      errorEl.textContent = `server not reachable: ${err.message}`;
+    }
+  }
+
+  // Keyboard: also called by index.html, which forwards keys to this frame.
+  window.footboardKey = (e) => {
+    if (e.target instanceof HTMLInputElement || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.key >= '1' && e.key <= String(SWITCHES)) {
+      send(bank * SWITCHES + Number(e.key));
+    } else if (e.key === 'ArrowLeft') {
+      setBank(bank - 1);
+    } else if (e.key === 'ArrowRight') {
+      setBank(bank + 1);
+    } else {
+      return false;
+    }
+    return true;
+  };
+  document.addEventListener('keydown', (e) => { if (window.footboardKey(e)) e.preventDefault(); });
+
+  document.getElementById('bank-down').addEventListener('click', () => setBank(bank - 1));
+  document.getElementById('bank-up').addEventListener('click', () => setBank(bank + 1));
+  document.getElementById('direct').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const input = document.getElementById('direct-input');
+    const program = Number(input.value);
+    if (Number.isInteger(program) && program >= 1 && program <= PROGRAMS) {
+      setBank(Math.floor((program - 1) / SWITCHES));
+      send(program);
+      input.select();
+    }
+  });
+
+  fetch('/api/midi/config')
+    .then((res) => res.json())
+    .then(({ midiChannel }) => {
+      document.getElementById('config').textContent = `MIDI out · channel ${midiChannel}`;
+    })
+    .catch(() => {});
+
+  // Inside index.html: report the height, so the frame fits without scrolling.
+  if (window.parent !== window) {
+    new ResizeObserver(() => {
+      window.parent.postMessage({ frameHeight: document.documentElement.scrollHeight, frame: 'footboard' }, location.origin);
+    }).observe(document.body);
+  }
+
+  bank = Math.min(Math.max(loadBank(), 0), BANKS - 1);
+  render();
+</script>
+</body>
+</html>
