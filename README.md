@@ -295,7 +295,56 @@ python docs/schematics.py
 
 ### Selecting a program
 
-Send a MIDI Program Change, or browse the presets with the rotary encoder: turn right for the next program, left for the previous one. Browsing wraps around, so turning right from program 128 gets you to program 1 and vice versa. The device loads the preset for that program and switches the amp to the stored channel. The LCD shows the current program (1–128) and its channel. While you turn the encoder only the LCD follows; the amp switches once the encoder has rested for 300 ms (`BROWSE_SETTLE_MS`), so it doesn't jump through every channel on the way.
+Send a MIDI Program Change, or browse the presets with the rotary encoder: turn right for the next program, left for the previous one. Browsing wraps around, so turning right from program 128 gets you to program 1 and vice versa. The device loads the preset for that program and switches the amp to the stored channel. The LCD shows the current program (1–128) and its channel. While you turn the encoder only the LCD follows; the amp switches once the encoder has rested for 300 ms (`BROWSE_SETTLE_MS`), so it doesn't jump through every channel on the way. A MIDI Program Change switches the amp right away.
+
+### MIDI
+
+Program Change 0–127 on the wire selects programs 1–128, as most MIDI gear numbers them. All other MIDI messages are ignored. Until the menu exists, the MIDI channel and OMNI mode are set at build time:
+
+| Build flag | Default | Meaning |
+|------------|---------|---------|
+| `MIDI_OMNI` | `1` | `1` = react to Program Change on every channel, `0` = only on `MIDI_CHANNEL` |
+| `MIDI_CHANNEL` | `1` | MIDI channel 1–16, used while OMNI is off |
+
+For example `build_flags = -DMIDI_OMNI=0 -DMIDI_CHANNEL=5` in [platformio.ini](platformio.ini). The serial monitor shows each accepted message as `midi: program change ch=… pc=…`.
+
+MIDI comes in on D0/RX, which the DIN socket's optocoupler and the Nano's USB chip share (see [Sharing the UART](#sharing-the-uart-with-usb)). So the same firmware handles both sources:
+
+- **DIN cable** from a MIDI pedal or multi-effects board.
+- **USB from the computer.** The CH340 is a USB-serial chip, not a USB MIDI device, so a bridge program on the computer has to forward MIDI to `/dev/ttyUSB0` at 31250 baud. Many tools (ttymidi, `stty`) reject 31250 because it's not a standard Linux rate, even though the CH340 supports it. Use [tools/usb_midi_bridge.py](tools/usb_midi_bridge.py) instead (see below).
+
+#### USB MIDI bridge (Linux)
+
+```sh
+sudo apt install python3-mido python3-rtmidi python3-serial
+python3 tools/usb_midi_bridge.py            # --port /dev/ttyUSB0 --name fenderswitch
+```
+
+The script opens a virtual ALSA MIDI port called **fenderswitch**. Send to it from a DAW or MIDI tool, or connect a controller to it with `aconnect` or qpwgraph. Lines starting with `>` are forwarded messages, lines with `<` are the firmware's serial output, so the bridge replaces the serial monitor while it runs. To use `pio device monitor` alongside it, start the bridge with `--no-monitor`: it then only sends, and the monitor gets the whole output. Without that option, both programs read the port and each gets random parts of the lines.
+
+Opening the port resets the Nano (auto-reset over DTR), so the amp briefly goes to More Drive while the bootloader runs. The bridge waits 2.5 s before it opens the MIDI port, so no messages get lost in that time. Your user needs to be in the `dialout` group.
+
+#### Web footboard
+
+[tools/footboard/](tools/footboard/) is a small Node.js app that turns a browser into a footboard: four large footswitches per bank (32 banks for programs 1–128), bank up/down, direct entry, and a display that mirrors the device's LCD and channel LEDs. It writes Program Change straight to the serial port, so it needs neither the bridge nor ALSA. It reads the firmware's output, so the page shows the channel the device actually switched to.
+
+```sh
+sudo apt install nodejs npm
+cd tools/footboard
+npm install
+npm start                       # http://localhost:8080
+```
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `SERIAL_PORT` | `/dev/ttyUSB0` | Serial port of the Nano |
+| `MIDI_CHANNEL` | `1` | MIDI channel to send on, 1–16 |
+| `PORT` | `8080` | HTTP port |
+| `HOST` | `0.0.0.0` | Listen address. The default makes the page reachable from a phone or tablet on the same network, without a password. Use `127.0.0.1` to keep it local |
+
+Keys on the page: 1–4 for the footswitches, ← → for the bank. Like the bridge, the server resets the Nano when it opens the port and reads the port itself, so don't run it together with the bridge or a serial monitor; its page has a log of the firmware's output instead.
+
+Don't send from both at the same time: the two streams would mix on the shared line.
 
 ### Editing a preset
 
@@ -328,8 +377,12 @@ Press the encoder's push button to enter menu mode, and press it again to leave.
 | [include/OpticalRelay.hpp](include/OpticalRelay.hpp) | Drives the two photorelays, switching make-before-break |
 | [include/Led.hpp](include/Led.hpp) | On/off LED with slow/fast blinking, swelling (PWM), a one-shot flash and a short wink (off, then on again) |
 | [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" toggles menu mode, Store saves a dirty preset. Also shows the working buffer: steady or swelling LED, `*` on the LCD while dirty |
+| [include/MidiTask.hpp](include/MidiTask.hpp) | MIDI IN: reads the UART, filters by MIDI channel or OMNI, and recalls the preset of each Program Change right away |
+| [include/MidiParser.hpp](include/MidiParser.hpp) | Byte-by-byte MIDI parser: running status, real-time bytes in the middle of messages, SysEx and stray data bytes |
 | [include/ChannelTask.hpp](include/ChannelTask.hpp) | The three channel buttons: a press switches the amp right away, holding the current channel's button for 2 s stores a dirty preset |
 | [include/Button.hpp](include/Button.hpp) | Debounced push button to GND, with hold detection (channel buttons, Store, the encoder's "Enter") |
+| [tools/footboard/](tools/footboard/) | Web footboard (Node.js): footswitch buttons in the browser send Program Change over USB serial, the page mirrors the device's display |
+| [tools/usb_midi_bridge.py](tools/usb_midi_bridge.py) | Linux: virtual ALSA MIDI port, forwarded over USB serial at 31250 baud, prints the firmware's serial output |
 | [include/StatsTask.hpp](include/StatsTask.hpp) | Prints loop passes per second over Serial, to spot blocking code. Off by default, turn it on with `-DSTATS_INTERVAL_S=10` in `build_flags` (development only) |
 
 ## License

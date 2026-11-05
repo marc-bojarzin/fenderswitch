@@ -78,6 +78,11 @@ public:
     // runTasks().
     void run() override;
 
+    // Selects program number (0-127) right away, e.g. after a MIDI Program
+    // Change: drops an unsaved change, switches the amp without the browse
+    // delay and cancels a pending browse.
+    void select(uint8_t number);
+
     // Switches the amp to the working buffer's channel and shows it on the
     // LEDs, Serial and the LCD. Cancels a pending delayed apply.
     void apply();

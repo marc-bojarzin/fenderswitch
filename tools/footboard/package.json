@@ -1,0 +1,17 @@
+{
+  "name": "fenderswitch-footboard",
+  "version": "0.1.0",
+  "description": "Web footboard for fenderswitch: sends MIDI Program Change to the Nano over USB serial",
+  "private": true,
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "serialport": "^12.0.0"
+  }
+}
