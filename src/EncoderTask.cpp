@@ -54,6 +54,12 @@ void EncoderTask::run()
     }
 }
 
+void EncoderTask::select(uint8_t number)
+{
+    presets_.select(number);
+    apply();
+}
+
 void EncoderTask::apply()
 {
     apply_pending_ = false;

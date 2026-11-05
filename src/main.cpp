@@ -11,6 +11,7 @@
 #include "EncoderTask.hpp"
 #include "PresetLoader.hpp"
 #include "ChannelTask.hpp"
+#include "MidiTask.hpp"
 
 // Sandbox: everything runs as cooperative tasks, without delay().
 //  - StatsTask prints how often loop() ran per second, proving that nothing
@@ -27,6 +28,9 @@
 //  - ChannelTask reads the Clean, Drive and More Drive buttons (A0-A2, to
 //    GND): a press switches the amp to that channel, the LED swells while the
 //    preset differs from the stored one, holding the button 2 s stores it.
+//  - MidiTask reads MIDI IN on the UART (D0/RX, from the DIN socket or from
+//    a serial-MIDI bridge over USB): a Program Change recalls its preset.
+//    Listens to MIDI_CHANNEL, or to all channels while MIDI_OMNI is 1.
 //  - Red, green and yellow on/off LEDs (each via 220-330 ohm resistor to GND)
 //    show the selected channel.
 //  - OUT_CH and OUT_GAIN drive the TLP222A input LEDs directly (390 ohm in
@@ -109,11 +113,15 @@ static ChannelTask channelTask {
     clean_button, drive_button, more_button, presets, encoderTask
 };
 
+// MIDI task instance: Program Change from MIDI IN, applied through
+// encoderTask.
+static MidiTask midiTask{encoderTask};
+
 // Array of all tasks to be run in the main loop.
 static Task* tasks[] = {
     &relay,
     &led_red, &led_green, &led_yellow,
-    &stats, &encoderTask, &channelTask
+    &stats, &midiTask, &encoderTask, &channelTask
 };
 
 void setup() {
