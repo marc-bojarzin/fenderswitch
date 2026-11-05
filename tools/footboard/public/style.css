@@ -1,0 +1,78 @@
+/* Shared by index.html, footboard.html and monitor.html. */
+:root {
+  --bg: #f4f2ee;
+  --panel: #e4e0d8;
+  --panel-edge: #cfcabf;
+  --text: #1d1c1a;
+  --muted: #6b675f;
+  --switch: #2b2a28;
+  --switch-text: #f4f2ee;
+  --switch-ring: #8a857b;
+  --lcd-bg: #9fb83a;
+  --lcd-text: #1d2a0a;
+  --seg-bg: #1a0d0b;
+  --seg-on: #ff4a36;
+  --clean: #2e9d4f;
+  --drive: #e0a800;
+  --more: #d0342c;
+  --led-on: #ff3b2f;
+  --off: #b9b4aa;
+  --focus: #2f6fd6;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #161614;
+    --panel: #23221f;
+    --panel-edge: #34332f;
+    --text: #ecebe7;
+    --muted: #9d998f;
+    --switch: #3a3935;
+    --switch-text: #ecebe7;
+    --switch-ring: #5c5a54;
+    --lcd-bg: #1f3a5f;
+    --lcd-text: #cfe6ff;
+    --off: #4a4843;
+    --focus: #6ea2ff;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font: 16px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+
+/* A device: an enclosure with a name plate. */
+.device {
+  background: var(--panel);
+  border: 1px solid var(--panel-edge);
+  border-radius: 14px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.plate { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.plate h1 { font-size: 1rem; margin: 0; letter-spacing: 0.08em; text-transform: uppercase; }
+.plate .sub { font-size: 0.8rem; color: var(--muted); }
+
+.status { font-size: 0.85rem; color: var(--muted); display: flex; align-items: center; gap: 6px; }
+.dot { width: 9px; height: 9px; border-radius: 50%; background: var(--more); }
+.status.ok .dot { background: var(--clean); }
+
+button {
+  font: inherit;
+  color: var(--switch-text);
+  background: var(--switch);
+  border: 3px solid var(--switch-ring);
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+button:disabled { opacity: 0.45; cursor: default; }
+
+.hint { font-size: 0.8rem; color: var(--muted); margin: 0; }
+.error { color: var(--more); font-size: 0.9rem; min-height: 1.2em; margin: 0; }

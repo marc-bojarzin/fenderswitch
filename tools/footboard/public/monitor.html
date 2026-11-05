@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Device Monitor</title>
+<link rel="stylesheet" href="style.css">
+<style>
+  body { padding: 16px; }
+  main { max-width: 720px; margin: 0 auto; }
+
+  /* Front panel: the 16x2 LCD and the three channel LEDs. */
+  .front { display: flex; align-items: center; gap: 16px; }
+  .lcd {
+    flex: 1;
+    background: var(--lcd-bg);
+    color: var(--lcd-text);
+    border-radius: 6px;
+    padding: 10px 14px;
+    font: 600 clamp(1.1rem, 4.6vw, 1.7rem)/1.25 ui-monospace, "DejaVu Sans Mono", monospace;
+    white-space: pre;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .leds { display: flex; flex-direction: column; gap: 8px; }
+  .led { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
+  .led i { width: 14px; height: 14px; border-radius: 50%; background: var(--off); transition: background 0.15s, box-shadow 0.15s; }
+  .led.on.clean i { background: var(--clean); box-shadow: 0 0 10px var(--clean); }
+  .led.on.drive i { background: var(--drive); box-shadow: 0 0 10px var(--drive); }
+  .led.on.more i { background: var(--more); box-shadow: 0 0 10px var(--more); }
+  .led.on.modified i { animation: swell 1.6s ease-in-out infinite; }
+  @keyframes swell { 50% { opacity: 0.25; box-shadow: none; } }
+
+  .log-head { display: flex; justify-content: space-between; align-items: baseline; }
+  .log-head h2 { font-size: 0.85rem; margin: 0; color: var(--muted); font-weight: 600; }
+  .log-head button { font-size: 0.75rem; padding: 2px 10px; border-radius: 999px; border-width: 1px; }
+  #log {
+    background: var(--bg);
+    border-radius: 8px;
+    padding: 8px 10px;
+    height: 220px;
+    overflow-y: auto;
+    font: 0.78rem/1.45 ui-monospace, "DejaVu Sans Mono", monospace;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #log .midi { color: var(--focus); }
+  #log .serial { color: var(--text); }
+</style>
+</head>
+<body>
+<main>
+  <section class="device" aria-label="fenderswitch device monitor">
+    <div class="plate">
+      <h1>fenderswitch · monitor</h1>
+      <div class="status" id="status"><span class="dot"></span><span id="status-text">connecting …</span></div>
+    </div>
+
+    <div class="front">
+      <div class="lcd" id="lcd" aria-live="polite">fenderswitch
+                </div>
+      <div class="leds">
+        <div class="led clean" id="led-clean"><i></i>Clean</div>
+        <div class="led drive" id="led-drive"><i></i>Drive</div>
+        <div class="led more" id="led-more"><i></i>More Drive</div>
+      </div>
+    </div>
+
+    <div class="log-head">
+      <h2>MIDI in &amp; serial output</h2>
+      <button id="clear">Clear</button>
+    </div>
+    <div id="log"></div>
+
+    <p class="hint">Read from the firmware's serial output over USB. A real MIDI cable has no way back; this view is for testing. <span id="config"></span></p>
+  </section>
+</main>
+
+<script>
+  const lcd = document.getElementById('lcd');
+  const statusEl = document.getElementById('status');
+  const statusText = document.getElementById('status-text');
+  const logEl = document.getElementById('log');
+  const leds = {
+    'Clean': document.getElementById('led-clean'),
+    'Drive': document.getElementById('led-drive'),
+    'More Drive': document.getElementById('led-more'),
+  };
+
+  function render(device) {
+    statusEl.classList.toggle('ok', device.connected);
+    statusText.textContent = device.connected ? 'connected' : 'not connected';
+
+    // Same layout as the device's second LCD line: "P12  Drive*".
+    if (device.program) {
+      const line = `P${String(device.program).padEnd(3)} ${device.ampChannel}${device.modified ? '*' : ''}`;
+      lcd.textContent = 'fenderswitch    \n' + line;
+    }
+    for (const [name, led] of Object.entries(leds)) {
+      const on = name === device.ampChannel;
+      led.classList.toggle('on', on);
+      led.classList.toggle('modified', on && device.modified);
+    }
+  }
+
+  function log(dir, text) {
+    const atBottom = logEl.scrollTop + logEl.clientHeight >= logEl.scrollHeight - 4;
+    const line = document.createElement('div');
+    line.className = dir;
+    const time = new Date().toLocaleTimeString([], { hour12: false });
+    line.textContent = `${time} ${dir === 'midi' ? 'MIDI ' : '     '}${text}`;
+    logEl.appendChild(line);
+    while (logEl.childElementCount > 300) logEl.firstChild.remove();
+    if (atBottom) logEl.scrollTop = logEl.scrollHeight;
+  }
+
+  document.getElementById('clear').addEventListener('click', () => { logEl.textContent = ''; });
+
+  // Live updates. EventSource reconnects by itself.
+  const events = new EventSource('/api/monitor/events');
+  events.addEventListener('device', (e) => render(JSON.parse(e.data)));
+  events.addEventListener('log', (e) => {
+    const { dir, text } = JSON.parse(e.data);
+    log(dir, text);
+  });
+  events.addEventListener('config', (e) => {
+    const { serialPort } = JSON.parse(e.data);
+    document.getElementById('config').textContent = `Port: ${serialPort}.`;
+  });
+  events.onerror = () => {
+    statusText.textContent = 'server not reachable';
+    statusEl.classList.remove('ok');
+  };
+
+  if (window.parent !== window) {
+    new ResizeObserver(() => {
+      window.parent.postMessage({ frameHeight: document.documentElement.scrollHeight, frame: 'monitor' }, location.origin);
+    }).observe(document.body);
+  }
+</script>
+</body>
+</html>

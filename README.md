@@ -326,14 +326,20 @@ Opening the port resets the Nano (auto-reset over DTR), so the amp briefly goes 
 
 #### Web footboard
 
-[tools/footboard/](tools/footboard/) is a small Node.js app that turns a browser into a footboard: four large footswitches per bank (32 banks for programs 1–128), bank up/down, direct entry, and a display that mirrors the device's LCD and channel LEDs. It writes Program Change straight to the serial port, so it needs neither the bridge nor ALSA. It reads the firmware's output, so the page shows the channel the device actually switched to.
+[tools/footboard/](tools/footboard/) is a small Node.js test rig with two separate web devices, connected only through the Nano's USB serial port:
+
+- **MIDI footboard** (`/footboard.html`): behaves like a plain hardware footboard. Four footswitches per bank (32 banks for programs 1–128), bank up/down, direct entry, and a 3-digit 7-segment display with the program last sent. It only sends Program Change and knows nothing about the presets. It writes the bytes straight to the serial port, so it needs neither the bridge nor ALSA.
+- **Device monitor** (`/monitor.html`): the fenderswitch's LCD and channel LEDs, plus a log of the MIDI bytes sent and the firmware's serial output. It reads the firmware's debug text, a return path that only exists because USB carries both directions; a real MIDI cable has none.
+
+The start page (`/`) shows both side by side. Each one also works on its own, for example the footboard on a phone.
 
 ```sh
 sudo apt install nodejs npm
-cd tools/footboard
-npm install
-npm start                       # http://localhost:8080
+tools/footboard/start.sh        # http://localhost:8080
+tools/footboard/start.sh -h     # options: -p serial port, -c MIDI channel, -H HTTP port, -l local only
 ```
+
+The script installs the dependencies on the first run and refuses to start while another program (serial monitor, bridge) holds the serial port. The options override these environment variables:
 
 | Variable | Default | Meaning |
 |----------|---------|---------|
@@ -381,7 +387,7 @@ Press the encoder's push button to enter menu mode, and press it again to leave.
 | [include/MidiParser.hpp](include/MidiParser.hpp) | Byte-by-byte MIDI parser: running status, real-time bytes in the middle of messages, SysEx and stray data bytes |
 | [include/ChannelTask.hpp](include/ChannelTask.hpp) | The three channel buttons: a press switches the amp right away, holding the current channel's button for 2 s stores a dirty preset |
 | [include/Button.hpp](include/Button.hpp) | Debounced push button to GND, with hold detection (channel buttons, Store, the encoder's "Enter") |
-| [tools/footboard/](tools/footboard/) | Web footboard (Node.js): footswitch buttons in the browser send Program Change over USB serial, the page mirrors the device's display |
+| [tools/footboard/](tools/footboard/) | Test rig (Node.js): a web MIDI footboard that sends Program Change over USB serial, and a separate device monitor that shows the firmware's display and serial output |
 | [tools/usb_midi_bridge.py](tools/usb_midi_bridge.py) | Linux: virtual ALSA MIDI port, forwarded over USB serial at 31250 baud, prints the firmware's serial output |
 | [include/StatsTask.hpp](include/StatsTask.hpp) | Prints loop passes per second over Serial, to spot blocking code. Off by default, turn it on with `-DSTATS_INTERVAL_S=10` in `build_flags` (development only) |
 
