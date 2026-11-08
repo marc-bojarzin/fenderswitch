@@ -1,11 +1,9 @@
 #include <Arduino.h>
-#include <LiquidCrystal_I2C.h>
-
 #include "Task.hpp"
 #include "Button.hpp"
 #include "Led.hpp"
 #include "RotaryEncoder.hpp"
-#include "LcdBuffer.hpp"
+#include "SegmentDisplay.hpp"
 #include "OpticalRelay.hpp"
 #include "StatsTask.hpp"
 #include "EncoderTask.hpp"
@@ -22,9 +20,9 @@
 //    pull-ups: A/CLK on pin 2, B/DT on pin 4, SW on pin 5, C and the other SW
 //    pin to GND): each step selects
 //    the next or previous program and switches the amp to its channel through
-//    the OpticalRelay. The program is shown on a 16x2 I2C LCD (SDA on A4, SCL
-//    on A5, address LCD_I2C_ADDR). Pressing "enter" toggles the (still empty)
-//    menu mode. The "Store" button (A3, to GND) stores a dirty preset.
+//    the OpticalRelay. The program number is shown on a 4-digit TM1637
+//    7-segment display (DIO on A4, CLK on A5). Pressing "enter" toggles the
+//    (still empty) menu mode. The "Store" button (A3, to GND) stores a dirty preset.
 //  - ChannelTask reads the Clean, Drive and More Drive buttons (A0-A2, to
 //    GND): a press switches the amp to that channel, the LED swells while the
 //    preset differs from the stored one, holding the button 2 s stores it.
@@ -50,8 +48,12 @@
 #define BTN_DRIVE_PIN  A1  // "Drive" button, to GND (INPUT_PULLUP)
 #define BTN_MORE_PIN   A2  // "More Drive" button, to GND (INPUT_PULLUP)
 #define BTN_STORE_PIN  A3  // "Store" button next to the encoder, to GND
+#define SEG_DIO_PIN    A4  // 7-segment display DIO (was LCD SDA)
+#define SEG_CLK_PIN    A5  // 7-segment display CLK (was LCD SCL)
 
-// LCD on I2C, default address 0x27 (A0-A2 not jumpered).
+// LCD on I2C, default address 0x27 (A0-A2 not jumpered). Not used at the
+// moment: the 7-segment display took its pins (A4/A5). LcdBuffer is still in
+// the project; an LCD needs Wire on A4/A5, which the TM1637 can't share.
 #define LCD_I2C_ADDR 0x27
 
 // UART speed: the MIDI baud rate. MIDI IN uses RX, Serial.print() uses TX, so
@@ -80,8 +82,8 @@ static OpticalRelay relay{OUT_CH_PIN, OUT_GAIN_PIN};
 // All presets in RAM plus the working buffer, loaded from EEPROM in setup().
 static PresetLoader presets;
 
-static LiquidCrystal_I2C lcd{LCD_I2C_ADDR, LCD_COLS, LCD_ROWS};
-static LcdBuffer lcd_buffer{&lcd};
+// 4-digit 7-segment display with colon (TM1637): shows the program number.
+static SegmentDisplay display{SEG_CLK_PIN, SEG_DIO_PIN};
 
 // The encoder needs an interrupt on both CLK and DT, but on the Nano only pins
 // 2 and 3 have external interrupts. So it uses the pin-change interrupt of
@@ -100,10 +102,11 @@ ISR(PCINT2_vect) { encoder.on_change(); }
 // Stats task instance: keeps track of various statistics.
 static StatsTask stats;
 
-// Encoder task instance: handles the rotary encoder and related buttons, updates the LCD and LEDs accordingly.
+// Encoder task instance: handles the rotary encoder and related buttons,
+// updates the display and LEDs accordingly.
 static EncoderTask encoderTask {
     encoder, store_button, presets,
-    relay,lcd_buffer,
+    relay, display,
     led_green, led_yellow, led_red
 };
 
@@ -127,9 +130,7 @@ static Task* tasks[] = {
 void setup() {
     Serial.begin(SERIAL_BAUD);
     Serial.println(F("fenderswitch started"));
-    lcd.init();
-    lcd.backlight();
-    lcd_buffer.update(0, "fenderswitch    ");
+    display.begin();
     presets.begin();
     encoderTask.apply();
     enablePinChangeInterrupt(ENC_CLK_PIN);

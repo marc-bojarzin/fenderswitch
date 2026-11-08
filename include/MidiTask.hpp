@@ -26,7 +26,7 @@
 //
 // A Program Change on the selected MIDI channel (or any channel with OMNI on)
 // selects that program right away, dropping an unsaved change, and switches
-// the amp. Program numbers 0-127 on the wire are programs 1-128 on the LCD.
+// the amp. Program numbers 0-127 on the wire are programs 1-128 on the display.
 // All other messages are ignored.
 //
 // Drains every byte waiting in the UART buffer on each pass, so the 64-byte
