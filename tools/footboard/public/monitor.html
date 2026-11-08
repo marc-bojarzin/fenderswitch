@@ -116,6 +116,9 @@
     '0': 'abcdef', '1': 'bc', '2': 'abdeg', '3': 'abcdg', '4': 'bcfg',
     '5': 'acdfg', '6': 'acdefg', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg',
     '-': 'g', ' ': '',
+    // Letters of the menu entries ALL, CH:01-CH:16 and ESC, as the firmware
+    // draws them.
+    'A': 'abcefg', 'C': 'adef', 'E': 'adefg', 'H': 'bcefg', 'L': 'def', 'S': 'acdfg',
   };
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const segEl = document.getElementById('seg');
@@ -153,9 +156,10 @@
     digits.push(parts);
   }
 
-  // Shows text (up to 4 characters, right-aligned) on the display.
-  function showSeg(text, colon = false) {
-    const chars = text.padStart(4, ' ').slice(-4);
+  // Shows text (up to 4 characters) on the display, right-aligned like a
+  // number or left-aligned like the firmware's texts.
+  function showSeg(text, colon = false, left = false) {
+    const chars = left ? text.padEnd(4, ' ').slice(0, 4) : text.padStart(4, ' ').slice(-4);
     digits.forEach((parts, i) => {
       const lit = GLYPHS[chars[i]] ?? '';
       for (const [name, poly] of Object.entries(parts)) {
@@ -166,14 +170,17 @@
     segEl.setAttribute('aria-label', text.trim() ? `Display: ${text.trim()}` : 'Display: blank');
   }
 
-  // Menu mode, read from the firmware's "menu on" / "menu off" lines: the
-  // device shows "----" until the menu is left again.
+  // Menu mode, read from the firmware's "menu on" / "menu off" lines; while
+  // it is open, each "menu: <entry>" line (ALL, CH:05, ESC) is what the
+  // device shows.
   let menu = false;
   let lastProgram = null;
   function trackMenu(text) {
+    const entry = /^menu: (.+)$/.exec(text);
     if (text === 'menu on') {
       menu = true;
-      showSeg('----');
+    } else if (entry && menu) {
+      showSeg(entry[1].replace(':', ''), entry[1].includes(':'), true);
     } else if (text === 'menu off') {
       menu = false;
       showSeg(lastProgram ? String(lastProgram) : '');

@@ -1,21 +1,9 @@
 #include "MidiTask.hpp"
 
-MidiTask::MidiTask(EncoderTask& ui)
+MidiTask::MidiTask(EncoderTask& ui, const MidiSettings& settings)
     : ui_{ui}
+    , settings_{settings}
 {
-}
-
-void MidiTask::set_channel(uint8_t channel)
-{
-    if (channel >= 1 && channel <= 16)
-    {
-        channel_ = channel - 1;
-    }
-}
-
-void MidiTask::set_omni(bool omni)
-{
-    omni_ = omni;
 }
 
 void MidiTask::run()
@@ -27,7 +15,7 @@ void MidiTask::run()
         {
             continue;
         }
-        if (!omni_ && message.channel != channel_)
+        if (!settings_.accepts(message.channel))
         {
             continue;
         }
