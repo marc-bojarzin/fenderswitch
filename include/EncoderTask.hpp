@@ -10,7 +10,7 @@
 #include "SegmentDisplay.hpp"
 #include "OpticalRelay.hpp"
 #include "PresetLoader.hpp"
-#include "MidiSettings.hpp"
+#include "Settings.hpp"
 
 // How long the encoder has to rest before the amp switches to the browsed
 // program, in ms. Browsing past programs only updates the display, so the amp
@@ -32,12 +32,20 @@
 // the encoder has rested for BROWSE_SETTLE_MS, the amp switches to the preset's
 // channel and its LED lights up.
 //
-// Pressing "Enter" opens the MIDI menu. Turning then browses the entries
-// "ALL" (OMNI), "CH:01" to "CH:16" and "ESC", wrapping around; the menu opens
-// on the current setting. Pressing "Enter" or "Store" confirms the entry
-// shown: a channel or ALL is written to EEPROM, ESC leaves without saving.
-// Either way the display goes back to the program number. MIDI and the
-// channel buttons keep working while the menu is open.
+// Pressing "Enter" opens the settings menu. Turning browses the entries of
+// the current menu, wrapping around; "Enter" or "Store" picks the one shown:
+//
+//   Chan   MIDI channel submenu, opens on the current setting:
+//          ALL (OMNI), CH:01 ... CH:16, ESC
+//   dISP   display brightness submenu, opens on the current level:
+//          br:01 (dimmest) ... br:08 (brightest), ESC. The display takes
+//          each level right away as a preview; ESC goes back to the stored one.
+//   ESC    leave the menu
+//
+// Picking a value in a submenu writes it to EEPROM and leaves the menu; ESC in
+// a submenu goes back to the top menu without saving. Once the menu is left,
+// the display shows the program number again. MIDI and the channel buttons
+// keep working while the menu is open.
 //
 // The "Store" button next to the encoder stores a dirty working buffer in live
 // mode, as an alternative to holding the channel button for 2 s.
@@ -46,15 +54,17 @@
 // LED of the active channel is steady while the preset is clean and swells
 // while it is dirty.
 //
-// A state machine with three states:
+// A state machine:
 //
 //   live      the amp plays the selected program. Enter -> menu, Store ->
 //             store a dirty preset, turn -> browsing.
 //   browsing  the display follows the encoder, the amp waits. Enter or Store
 //             apply right away, then act as in live; turn -> stay (restarts
 //             the wait); rest for BROWSE_SETTLE_MS -> apply, live.
-//   menu      the MIDI menu. Enter or Store -> confirm, live; turn ->
-//             next/previous entry.
+//   menu, menu_midi, menu_display
+//             the top menu and its submenus. Turn -> next/previous entry;
+//             Enter or Store -> pick it (open a submenu, save and -> live,
+//             or ESC: up one level).
 //
 // A button press wins over encoder steps in the same pass.
 //
@@ -71,7 +81,9 @@ class EncoderTask : public Task
     {
         live,
         browsing,
-        menu,
+        menu,           // top menu
+        menu_midi,      // MIDI submenu
+        menu_display,   // display brightness submenu
     };
 
     // Input of one pass, read once and handed to the state's handler.
@@ -87,7 +99,7 @@ class EncoderTask : public Task
     PresetLoader& presets_;
     OpticalRelay& relay_;
     SegmentDisplay& display_;
-    MidiSettings& midi_;
+    Settings& settings_;
 
     // Channel LEDs: Clean, Drive and More Drive.
     Led& led_green_;
@@ -96,9 +108,9 @@ class EncoderTask : public Task
 
     State state_ = State::live;
 
-    // Menu entry shown: MIDI_OMNI_SETTING (ALL), 1-16 (channel) or
-    // MENU_ESC.
-    uint8_t menu_entry_ = MIDI_OMNI_SETTING;
+    // Entry shown in the current menu, 0 to menuSize() - 1; the last one is
+    // always ESC.
+    uint8_t menu_entry_ = 0;
 
     // millis() of the last encoder step, while browsing.
     uint32_t moved_at_ = 0;
@@ -110,7 +122,7 @@ public:
     // Constructor.
     EncoderTask(RotaryEncoder& encoder, Button& store, PresetLoader& presets,
                 OpticalRelay& relay, SegmentDisplay& display,
-                MidiSettings& midi, Led& led_green, Led& led_yellow, Led& led_red);
+                Settings& settings, Led& led_green, Led& led_yellow, Led& led_red);
 
     // Polls the encoder, its button and the Store button; called by
     // runTasks().
@@ -147,15 +159,37 @@ private:
     // Returns the LED of channel.
     Led& channelLed(AmpChannel channel);
 
-    // Opens the MIDI menu on the current setting. -> menu.
+    // Opens the top menu. -> menu.
     void openMenu();
 
-    // Confirms the menu entry shown (stores it, or drops it on ESC) and
-    // leaves the menu. -> live.
+    // Switches to menu state (menu, menu_midi or menu_display) on entry and
+    // shows it.
+    void enterMenu(State state, uint8_t entry);
+
+    // Picks the entry shown in the current menu: opens a submenu, saves a
+    // value and leaves (-> live), or ESC goes up one level.
     void confirmMenu();
+
+    // Leaves the menu. -> live.
+    void closeMenu();
+
+    // Returns the number of entries in the current menu, ESC included.
+    uint8_t menuSize() const;
+
+    // Returns true if the entry shown is the ESC of the current menu.
+    bool atEsc() const;
+
+    // Writes the text of the menu entry shown to text (4 characters at
+    // most), e.g. "CH05"; returns true if the colon belongs between the
+    // second and third character ("CH:05").
+    bool menuText(char text[SEGMENT_DIGITS + 1]) const;
 
     // Writes the menu entry to Serial, e.g. "menu: CH:05".
     void printMenuEntry();
+
+    // Sets the display brightness (0-7) and reports it on Serial, e.g.
+    // "display: brightness=5" (1-8, as in the menu).
+    void setBrightness(uint8_t brightness);
 
     // Shows the program number (1-based, as on MIDI gear), or the menu entry,
     // on the display.

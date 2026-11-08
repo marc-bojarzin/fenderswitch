@@ -23,7 +23,8 @@
   .seg svg { width: clamp(28px, 8vw, 40px); height: auto; display: block; overflow: visible; }
   .seg svg.colon { width: clamp(6px, 1.6vw, 8px); }
   .seg polygon, .seg circle { fill: var(--seg-on); opacity: 0.1; transition: opacity 0.08s; }
-  .seg .lit { opacity: 1; filter: drop-shadow(0 0 3px var(--seg-on)); }
+  /* --seg-level follows the device's display brightness (1-8). */
+  .seg .lit { opacity: var(--seg-level, 1); filter: drop-shadow(0 0 3px var(--seg-on)); }
   .leds { display: flex; flex-direction: column; gap: 8px; }
   .led { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
   .led i { width: 14px; height: 14px; border-radius: 50%; background: var(--off); transition: background 0.15s, box-shadow 0.15s; }
@@ -116,9 +117,10 @@
     '0': 'abcdef', '1': 'bc', '2': 'abdeg', '3': 'abcdg', '4': 'bcfg',
     '5': 'acdfg', '6': 'acdefg', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg',
     '-': 'g', ' ': '',
-    // Letters of the menu entries ALL, CH:01-CH:16 and ESC, as the firmware
-    // draws them.
-    'A': 'abcefg', 'C': 'adef', 'E': 'adefg', 'H': 'bcefg', 'L': 'def', 'S': 'acdfg',
+    // Letters of the menu entries (Chan, dISP, ALL, CH:05, br:05, ESC), as
+    // the firmware draws them.
+    'A': 'abcefg', 'C': 'adef', 'E': 'adefg', 'H': 'bcefg', 'I': 'ef', 'L': 'def',
+    'P': 'abefg', 'S': 'acdfg', 'a': 'abcefg', 'b': 'cdefg', 'd': 'bcdeg', 'h': 'cefg', 'n': 'ceg', 'r': 'eg',
   };
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const segEl = document.getElementById('seg');
@@ -177,6 +179,12 @@
   let lastProgram = null;
   function trackMenu(text) {
     const entry = /^menu: (.+)$/.exec(text);
+    const brightness = /^display: brightness=([1-8])$/.exec(text);
+    if (brightness) {
+      // Level 1-8 -> opacity 0.3-1, roughly how the TM1637 dims.
+      segEl.style.setProperty('--seg-level', 0.3 + (0.7 * (brightness[1] - 1)) / 7);
+      return;
+    }
     if (text === 'menu on') {
       menu = true;
     } else if (entry && menu) {

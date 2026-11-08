@@ -10,7 +10,7 @@
 #include "PresetLoader.hpp"
 #include "ChannelTask.hpp"
 #include "MidiTask.hpp"
-#include "MidiSettings.hpp"
+#include "Settings.hpp"
 
 // Sandbox: everything runs as cooperative tasks, without delay().
 //  - StatsTask prints how often loop() ran per second, proving that nothing
@@ -23,14 +23,14 @@
 //    the next or previous program and switches the amp to its channel through
 //    the OpticalRelay. The program number is shown on a 4-digit TM1637
 //    7-segment display (DIO on A4, CLK on A5). Pressing "enter" opens the
-//    MIDI menu (ALL, CH:01-CH:16, ESC). The "Store" button (A3, to GND)
+//    settings menu (MIDI channel, display brightness). The "Store" button (A3, to GND)
 //    stores a dirty preset, or confirms the menu entry.
 //  - ChannelTask reads the Clean, Drive and More Drive buttons (A0-A2, to
 //    GND): a press switches the amp to that channel, the LED swells while the
 //    preset differs from the stored one, holding the button 2 s stores it.
 //  - MidiTask reads MIDI IN on the UART (D0/RX, from the DIN socket or from
 //    a serial-MIDI bridge over USB): a Program Change recalls its preset.
-//    Listens to the channel in MidiSettings (EEPROM), or to all (OMNI).
+//    Listens to the channel in Settings (EEPROM), or to all (OMNI).
 //  - Red, green and yellow on/off LEDs (each via 220-330 ohm resistor to GND)
 //    show the selected channel.
 //  - OUT_CH and OUT_GAIN drive the TLP222A input LEDs directly (390 ohm in
@@ -84,8 +84,9 @@ static OpticalRelay relay{OUT_CH_PIN, OUT_GAIN_PIN};
 // All presets in RAM plus the working buffer, loaded from EEPROM in setup().
 static PresetLoader presets;
 
-// MIDI channel or OMNI, loaded from EEPROM in setup(), set in the menu.
-static MidiSettings midi_settings;
+// Settings made in the menu (MIDI channel or OMNI, display brightness),
+// loaded from EEPROM in setup().
+static Settings settings;
 
 // 4-digit 7-segment display with colon (TM1637): shows the program number.
 static SegmentDisplay display{SEG_CLK_PIN, SEG_DIO_PIN};
@@ -111,7 +112,7 @@ static StatsTask stats;
 // updates the display and LEDs accordingly.
 static EncoderTask encoderTask {
     encoder, store_button, presets,
-    relay, display, midi_settings,
+    relay, display, settings,
     led_green, led_yellow, led_red
 };
 
@@ -123,7 +124,7 @@ static ChannelTask channelTask {
 
 // MIDI task instance: Program Change from MIDI IN, applied through
 // encoderTask.
-static MidiTask midiTask{encoderTask, midi_settings};
+static MidiTask midiTask{encoderTask, settings};
 
 // Array of all tasks to be run in the main loop.
 static Task* tasks[] = {
@@ -135,18 +136,20 @@ static Task* tasks[] = {
 void setup() {
     Serial.begin(SERIAL_BAUD);
     Serial.println(F("fenderswitch started"));
-    display.begin();
+    settings.begin();
+    display.begin(settings.brightness());
     presets.begin();
-    midi_settings.begin();
-    if (midi_settings.setting() == MIDI_OMNI_SETTING)
+    if (settings.midi() == MIDI_OMNI_SETTING)
     {
         Serial.println(F("midi: omni"));
     }
     else
     {
         Serial.print(F("midi: channel="));
-        Serial.println(midi_settings.setting());
+        Serial.println(settings.midi());
     }
+    Serial.print(F("display: brightness="));
+    Serial.println(settings.brightness() + 1);
     encoderTask.apply();
     enablePinChangeInterrupt(ENC_CLK_PIN);
     enablePinChangeInterrupt(ENC_DT_PIN);
