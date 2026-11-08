@@ -39,7 +39,7 @@
 
   .direct { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   .direct label { color: var(--muted); font-size: 0.9rem; }
-  .direct input {
+  .direct input, .direct select {
     font: inherit;
     width: 6em;
     padding: 6px 10px;
@@ -49,6 +49,8 @@
     color: var(--text);
   }
   .direct button { border-radius: 8px; padding: 6px 14px; }
+  .direct select { width: auto; }
+  .settings { justify-content: flex-end; }
 
   /* ---- Brushed aluminium enclosure -------------------------------------
      The footboard is a physical object, so it stays aluminium in dark mode. */
@@ -161,7 +163,7 @@
     background: linear-gradient(180deg, #b8bdc2 0%, #d2d6da 100%);
     box-shadow: inset 0 2px 4px rgba(0,0,0,0.3);
   }
-  .alu .direct input {
+  .alu .direct input, .alu .direct select {
     color: #1f2226;
     background: #f5f6f7;
     border: 1px solid #7d838a;
@@ -200,6 +202,11 @@
       <button type="submit">Send</button>
     </form>
 
+    <div class="direct settings">
+      <label for="channel">MIDI channel</label>
+      <select id="channel"></select>
+    </div>
+
     <p class="error" id="error"></p>
     <p class="hint">Keys: 1–4 footswitches, ← → bank. Sends Program Change only, nothing comes back.</p>
   </section>
@@ -213,6 +220,11 @@
   const errorEl = document.getElementById('error');
 
   let bank = 0;
+  // MIDI channel 1-16 to send on. Until the user picks one, the server's
+  // default (MIDI_CHANNEL).
+  let channel = null;
+  const channelEl = document.getElementById('channel');
+  for (let ch = 1; ch <= 16; ch++) channelEl.add(new Option(String(ch), String(ch)));
   // The program this footboard sent last. A footboard only knows what it
   // sent, not what the receiver did with it.
   let sent = null;
@@ -222,6 +234,20 @@
   }
   function saveBank() {
     try { localStorage.setItem('footboard.bank', String(bank)); } catch { /* ignore */ }
+  }
+  function loadChannel() {
+    try {
+      const ch = Number(localStorage.getItem('footboard.channel'));
+      return ch >= 1 && ch <= 16 ? ch : null;
+    } catch { return null; }
+  }
+  function saveChannel() {
+    try { localStorage.setItem('footboard.channel', String(channel)); } catch { /* ignore */ }
+  }
+  function setChannel(ch) {
+    channel = ch;
+    channelEl.value = String(ch);
+    document.getElementById('config').textContent = `MIDI out · channel ${ch}`;
   }
 
   // 3-digit 7-segment display. Segments a-g, in a 40 x 70 box, slanted.
@@ -307,7 +333,7 @@
       const res = await fetch('/api/midi/program-change', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ program }),
+        body: JSON.stringify(channel === null ? { program } : { program, channel }),
       });
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
@@ -323,7 +349,7 @@
 
   // Keyboard: also called by index.html, which forwards keys to this frame.
   window.footboardKey = (e) => {
-    if (e.target instanceof HTMLInputElement || e.ctrlKey || e.metaKey || e.altKey) return false;
+    if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.ctrlKey || e.metaKey || e.altKey) return false;
     if (e.key >= '1' && e.key <= String(SWITCHES)) {
       send(bank * SWITCHES + Number(e.key));
     } else if (e.key === 'ArrowLeft') {
@@ -350,12 +376,20 @@
     }
   });
 
-  fetch('/api/midi/config')
-    .then((res) => res.json())
-    .then(({ midiChannel }) => {
-      document.getElementById('config').textContent = `MIDI out · channel ${midiChannel}`;
-    })
-    .catch(() => {});
+  channelEl.addEventListener('change', () => {
+    setChannel(Number(channelEl.value));
+    saveChannel();
+  });
+
+  const savedChannel = loadChannel();
+  if (savedChannel !== null) {
+    setChannel(savedChannel);
+  } else {
+    fetch('/api/midi/config')
+      .then((res) => res.json())
+      .then(({ midiChannel }) => { if (channel === null) setChannel(midiChannel); })
+      .catch(() => {});
+  }
 
   // Inside index.html: report the height, so the frame fits without scrolling.
   if (window.parent !== window) {

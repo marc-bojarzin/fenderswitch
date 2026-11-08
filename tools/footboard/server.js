@@ -19,7 +19,8 @@
 //
 // Settings (environment variables):
 //   SERIAL_PORT   serial port of the Nano     (default /dev/ttyUSB0)
-//   MIDI_CHANNEL  MIDI channel 1-16 to send   (default 1)
+//   MIDI_CHANNEL  default MIDI channel 1-16   (default 1; the footboard page
+//                 to send on                  can pick another one)
 //   PORT          HTTP port                   (default 8080)
 //   HOST          address to listen on        (default 0.0.0.0, i.e. also
 //                                              reachable from a phone or
@@ -92,14 +93,14 @@ function openPort() {
 // ===========================================================================
 // Footboard: MIDI out. Knows only program numbers.
 
-// Sends Program Change for program 1-128 on MIDI_CHANNEL.
-function sendProgramChange(program) {
-  const bytes = [0xC0 | (MIDI_CHANNEL - 1), program - 1];
+// Sends Program Change for program 1-128 on MIDI channel 1-16.
+function sendProgramChange(program, channel) {
+  const bytes = [0xC0 | (channel - 1), program - 1];
   port.write(Buffer.from(bytes));
   // The monitor shows the bytes on the wire, like a MIDI analyzer would.
   monitorBroadcast('log', {
     dir: 'midi',
-    text: `${bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ')}  program change ch=${MIDI_CHANNEL} pc=${program}`,
+    text: `${bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ')}  program change ch=${channel} pc=${program}`,
   });
 }
 
@@ -169,27 +170,31 @@ async function readJson(req) {
 }
 
 // Footboard API.
-//   GET  /api/midi/config          -> {midiChannel}
-//   POST /api/midi/program-change  {program: 1-128}
+//   GET  /api/midi/config          -> {midiChannel}  (the default channel)
+//   POST /api/midi/program-change  {program: 1-128, channel?: 1-16}
 async function handleMidi(req, res, pathname) {
   if (req.method === 'GET' && pathname === '/api/midi/config') {
     return sendJson(res, 200, { midiChannel: MIDI_CHANNEL });
   }
   if (req.method === 'POST' && pathname === '/api/midi/program-change') {
     let program;
+    let channel;
     try {
-      ({ program } = await readJson(req));
+      ({ program, channel = MIDI_CHANNEL } = await readJson(req));
     } catch {
-      return sendJson(res, 400, { error: 'expected JSON {"program": 1-128}' });
+      return sendJson(res, 400, { error: 'expected JSON {"program": 1-128, "channel": 1-16}' });
     }
     if (!Number.isInteger(program) || program < 1 || program > PROGRAM_COUNT) {
       return sendJson(res, 400, { error: 'program must be an integer 1-128' });
     }
+    if (!Number.isInteger(channel) || channel < 1 || channel > 16) {
+      return sendJson(res, 400, { error: 'channel must be an integer 1-16' });
+    }
     if (!linkReady) {
       return sendJson(res, 503, { error: 'MIDI out not connected' });
     }
-    sendProgramChange(program);
-    return sendJson(res, 200, { ok: true, program });
+    sendProgramChange(program, channel);
+    return sendJson(res, 200, { ok: true, program, channel });
   }
   res.writeHead(404).end();
 }
@@ -249,7 +254,7 @@ http.createServer((req, res) => {
     res.end();
   });
 }).listen(HTTP_PORT, HOST, () => {
-  console.log(`footboard + monitor: http://localhost:${HTTP_PORT}/ (MIDI channel ${MIDI_CHANNEL})`);
+  console.log(`footboard + monitor: http://localhost:${HTTP_PORT}/ (default MIDI channel ${MIDI_CHANNEL})`);
   console.log(`  footboard only:    http://localhost:${HTTP_PORT}/footboard.html`);
   console.log(`  monitor only:      http://localhost:${HTTP_PORT}/monitor.html`);
 });

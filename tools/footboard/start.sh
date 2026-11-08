@@ -3,7 +3,7 @@
 #
 # Usage: tools/footboard/start.sh [-p SERIAL_PORT] [-c MIDI_CHANNEL] [-H PORT] [-l]
 #   -p  serial port of the Nano        (default: $SERIAL_PORT or /dev/ttyUSB0)
-#   -c  MIDI channel to send on, 1-16  (default: $MIDI_CHANNEL or 1)
+#   -c  default MIDI channel, 1-16     (default: $MIDI_CHANNEL or 1)
 #   -H  HTTP port                      (default: $PORT or 8080)
 #   -l  local only: listen on 127.0.0.1, not reachable from other devices
 #
