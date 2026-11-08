@@ -86,7 +86,7 @@ void SegmentDisplay::clear()
     update(blank, false);
 }
 
-void SegmentDisplay::showNumber(uint16_t value)
+void SegmentDisplay::showNumber(uint16_t value, bool colon)
 {
     uint8_t digits[SEGMENT_DIGITS];
     if (value > 9999)
@@ -103,17 +103,17 @@ void SegmentDisplay::showNumber(uint16_t value)
             value /= 10;
         }
     }
-    update(digits, colon_);
+    update(digits, colon);
 }
 
-void SegmentDisplay::showText(const char* text)
+void SegmentDisplay::showText(const char* text, bool colon)
 {
     uint8_t digits[SEGMENT_DIGITS];
     for (uint8_t i = 0; i < SEGMENT_DIGITS; ++i)
     {
         digits[i] = *text ? encode(*text++) : 0;
     }
-    update(digits, colon_);
+    update(digits, colon);
 }
 
 void SegmentDisplay::showSegments(const uint8_t segments[SEGMENT_DIGITS])

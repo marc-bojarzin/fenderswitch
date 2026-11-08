@@ -56,13 +56,14 @@ public:
     void clear();
 
     // Shows value right-aligned without leading zeros, e.g. "  12". Values
-    // above 9999 show "----". Keeps the colon.
-    void showNumber(uint16_t value);
+    // above 9999 show "----". The colon is on or off as given.
+    void showNumber(uint16_t value, bool colon = false);
 
     // Shows up to SEGMENT_DIGITS characters left-aligned, padded with blanks,
-    // e.g. "Ch16" or "Omni". Knows digits, letters (as far as 7 segments
-    // allow), '-', '_' and ' '; anything else stays blank. Keeps the colon.
-    void showText(const char* text);
+    // e.g. "CH16" (with colon: "CH:16") or "ALL". Knows digits, letters (as
+    // far as 7 segments allow), '-', '_' and ' '; anything else stays blank.
+    // The colon is on or off as given.
+    void showText(const char* text, bool colon = false);
 
     // Shows raw segment patterns (bit 0 = segment A ... bit 6 = segment G),
     // left to right. Keeps the colon.

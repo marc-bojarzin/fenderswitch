@@ -27,13 +27,13 @@ There are three momentary push buttons, one for each channel, so you can select 
 
 The microcontroller's EEPROM holds up to **128 presets**, one per MIDI program number. A MIDI IN circuit feeds the microcontroller's UART. When the device receives a **MIDI Program Change**, it loads the preset stored for that program and switches the amp to that channel. This lets you control the amp from an external MIDI pedal or a multi-effects board.
 
-At boot, all presets are loaded from EEPROM into RAM, so switching programs never waits for the EEPROM. Preset *n* is stored in EEPROM byte *n* (bytes 0–127); the bytes above are free for settings such as the MIDI channel.
+At boot, all presets are loaded from EEPROM into RAM, so switching programs never waits for the EEPROM. Preset *n* is stored in EEPROM byte *n* (bytes 0–127). Byte 128 holds the MIDI setting (0 = OMNI, 1–16 = channel); the bytes above are free.
 
 All programs start out as **Clean**, the factory preset. You change a preset with the channel buttons and store it by holding the button or by pressing **Store** (see [Usage](#usage)).
 
 ### Display and controls
 
-An internal 4-digit 7-segment display (TM1637, with a colon) shows the current program number. It will also show the configuration menus, for example for setting the MIDI channel and turning OMNI mode on or off. A rotary encoder with a built-in push button lets you move through the menus and browse quickly through the presets. The **Store** button next to it saves a modified preset, and in the menus it confirms the MIDI settings and writes them to EEPROM.
+An internal 4-digit 7-segment display (TM1637, with a colon) shows the current program number, and the MIDI menu for setting the MIDI channel or OMNI mode. A rotary encoder with a built-in push button lets you move through the menus and browse quickly through the presets. The **Store** button next to it saves a modified preset, and in the menu it confirms the MIDI setting and writes it to EEPROM.
 
 ## Features
 
@@ -299,14 +299,14 @@ Send a MIDI Program Change, or browse the presets with the rotary encoder: turn 
 
 ### MIDI
 
-Program Change 0–127 on the wire selects programs 1–128, as most MIDI gear numbers them. All other MIDI messages are ignored. Until the menu exists, the MIDI channel and OMNI mode are set at build time:
+Program Change 0–127 on the wire selects programs 1–128, as most MIDI gear numbers them. All other MIDI messages are ignored. The device listens on one MIDI channel or, in OMNI mode, on all of them; set this in the [MIDI menu](#midi-menu). The setting is kept in EEPROM. On a fresh EEPROM these build flags give the factory default:
 
 | Build flag | Default | Meaning |
 |------------|---------|---------|
 | `MIDI_OMNI` | `1` | `1` = react to Program Change on every channel, `0` = only on `MIDI_CHANNEL` |
 | `MIDI_CHANNEL` | `1` | MIDI channel 1–16, used while OMNI is off |
 
-For example `build_flags = -DMIDI_OMNI=0 -DMIDI_CHANNEL=5` in [platformio.ini](platformio.ini). The serial monitor shows each accepted message as `midi: program change ch=… pc=…`.
+At startup the serial monitor shows the active setting (`midi: omni` or `midi: channel=5`), and each accepted message as `midi: program change ch=… pc=…`.
 
 MIDI comes in on D0/RX, which the DIN socket's optocoupler and the Nano's USB chip share (see [Sharing the UART](#sharing-the-uart-with-usb)). So the same firmware handles both sources:
 
@@ -328,15 +328,15 @@ Opening the port resets the Nano (auto-reset over DTR), so the amp briefly goes 
 
 [tools/footboard/](tools/footboard/) is a small Node.js test rig with two separate web devices, connected only through the Nano's USB serial port:
 
-- **MIDI footboard** (`/footboard.html`): behaves like a plain hardware footboard. Four footswitches per bank (32 banks for programs 1–128), bank up/down, direct entry, and a 3-digit 7-segment display with the program last sent. It only sends Program Change and knows nothing about the presets. It writes the bytes straight to the serial port, so it needs neither the bridge nor ALSA.
-- **Device monitor** (`/monitor.html`): the fenderswitch's 7-segment display (program number, `----` in menu mode) and channel LEDs, plus a log of the MIDI bytes sent and the firmware's serial output. It reads the firmware's debug text, a return path that only exists because USB carries both directions; a real MIDI cable has none.
+- **MIDI footboard** (`/footboard.html`): behaves like a plain hardware footboard. Four footswitches per bank (32 banks for programs 1–128), bank up/down, direct entry, a MIDI channel setting (1–16, remembered in the browser), and a 3-digit 7-segment display with the program last sent. It only sends Program Change and knows nothing about the presets. It writes the bytes straight to the serial port, so it needs neither the bridge nor ALSA.
+- **Device monitor** (`/monitor.html`): the fenderswitch's 7-segment display (program number, or the menu entry while the MIDI menu is open) and channel LEDs, plus a log of the MIDI bytes sent and the firmware's serial output. It reads the firmware's debug text, a return path that only exists because USB carries both directions; a real MIDI cable has none.
 
 The start page (`/`) shows both side by side. Each one also works on its own, for example the footboard on a phone.
 
 ```sh
 sudo apt install nodejs npm
 tools/footboard/start.sh        # http://localhost:8080
-tools/footboard/start.sh -h     # options: -p serial port, -c MIDI channel, -H HTTP port, -l local only
+tools/footboard/start.sh -h     # options: -p serial port, -c default MIDI channel, -H HTTP port, -l local only
 ```
 
 The script installs the dependencies on the first run and refuses to start while another program (serial monitor, bridge) holds the serial port. The options override these environment variables:
@@ -344,7 +344,7 @@ The script installs the dependencies on the first run and refuses to start while
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `SERIAL_PORT` | `/dev/ttyUSB0` | Serial port of the Nano |
-| `MIDI_CHANNEL` | `1` | MIDI channel to send on, 1–16 |
+| `MIDI_CHANNEL` | `1` | Default MIDI channel to send on, 1–16, until the channel is changed on the footboard page |
 | `PORT` | `8080` | HTTP port |
 | `HOST` | `0.0.0.0` | Listen address. The default makes the page reachable from a phone or tablet on the same network, without a password. Use `127.0.0.1` to keep it local |
 
@@ -363,11 +363,17 @@ All 128 presets are initialized to **Clean** in the EEPROM. This is the **factor
 
 A program change while the preset is dirty, whether by MIDI Program Change or with the encoder, drops the modified state without saving it. The preset keeps its stored channel.
 
-### Menu mode
+### MIDI menu
 
-Press the encoder's push button to enter menu mode, and press it again to leave. In menu mode, turning the encoder doesn't change the program, and **Store** confirms the settings and writes them to EEPROM. The menus themselves (MIDI channel, OMNI) are still to come.
+Press the encoder's push button to open the MIDI menu. The display shows the current setting; turning the encoder browses the entries, wrapping around at both ends:
 
-<!-- More: MIDI channel / OMNI menu, other controls. -->
+| Display | Meaning |
+|---------|---------|
+| `ALL` | OMNI: react to Program Change on every channel (a 7-segment display can't draw the "m" of "Omni") |
+| `CH:01` … `CH:16` | React only to this MIDI channel |
+| `ESC` | Leave without saving |
+
+Press the encoder's push button or **Store** to confirm the entry shown. A channel or `ALL` is written to EEPROM and takes effect right away; `ESC` keeps the old setting. Either way the display goes back to the program number. While the menu is open, turning the encoder doesn't change the program, but MIDI and the channel buttons keep working.
 
 ## Code structure
 
@@ -383,8 +389,9 @@ Press the encoder's push button to enter menu mode, and press it again to leave.
 | [include/PresetLoader.hpp](include/PresetLoader.hpp) | All 128 presets in RAM plus the working buffer, dirty tracking and storing |
 | [include/OpticalRelay.hpp](include/OpticalRelay.hpp) | Drives the two photorelays, switching make-before-break |
 | [include/Led.hpp](include/Led.hpp) | On/off LED with slow/fast blinking, swelling (PWM), a one-shot flash and a short wink (off, then on again) |
-| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" toggles menu mode, Store saves a dirty preset. Also shows the working buffer: steady or swelling LED while dirty |
-| [include/MidiTask.hpp](include/MidiTask.hpp) | MIDI IN: reads the UART, filters by MIDI channel or OMNI, and recalls the preset of each Program Change right away |
+| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" opens the MIDI menu (ALL, CH:01–CH:16, ESC; Enter or Store confirms), Store saves a dirty preset. Also shows the working buffer: steady or swelling LED while dirty |
+| [include/MidiSettings.hpp](include/MidiSettings.hpp) | The MIDI setting (OMNI or channel 1–16), stored in EEPROM byte 128 |
+| [include/MidiTask.hpp](include/MidiTask.hpp) | MIDI IN: reads the UART, filters by the MIDI channel or OMNI from MidiSettings, and recalls the preset of each Program Change right away |
 | [include/MidiParser.hpp](include/MidiParser.hpp) | Byte-by-byte MIDI parser: running status, real-time bytes in the middle of messages, SysEx and stray data bytes |
 | [include/ChannelTask.hpp](include/ChannelTask.hpp) | The three channel buttons: a press switches the amp right away, holding the current channel's button for 2 s stores a dirty preset |
 | [include/Button.hpp](include/Button.hpp) | Debounced push button to GND, with hold detection (channel buttons, Store, the encoder's "Enter") |
