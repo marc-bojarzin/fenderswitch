@@ -2,14 +2,20 @@
 
 static const char* const channel_names[AMP_CHANNEL_COUNT] = {"Clean", "Drive", "More Drive"};
 
-// Menu entries: MIDI_OMNI_SETTING (ALL), the channels 1-16, then ESC.
-#define MENU_ESC     17
-#define MENU_ENTRIES 18
+// Top menu entries.
+#define TOP_MIDI     0
+#define TOP_DISPLAY  1
+#define TOP_ENTRIES  3  // ESC included
 
+// MIDI submenu: MIDI_OMNI_SETTING (ALL), the channels 1-16, then ESC.
+#define MIDI_ENTRIES 18
+
+// Display submenu: brightness 0-7 (shown as br:01-br:08), then ESC.
+#define DISPLAY_ENTRIES 9
 
 EncoderTask::EncoderTask(RotaryEncoder& encoder, Button& store,
                          PresetLoader& presets, OpticalRelay& relay,
-                         SegmentDisplay& display, MidiSettings& midi,
+                         SegmentDisplay& display, Settings& settings,
                          Led& led_green,
                          Led& led_yellow, Led& led_red)
     : encoder_{encoder}
@@ -17,7 +23,7 @@ EncoderTask::EncoderTask(RotaryEncoder& encoder, Button& store,
     , presets_{presets}
     , relay_{relay}
     , display_{display}
-    , midi_{midi}
+    , settings_{settings}
     , led_green_{led_green}
     , led_yellow_{led_yellow}
     , led_red_{led_red}
@@ -38,6 +44,8 @@ void EncoderTask::run()
         runBrowsing(in);
         break;
     case State::menu:
+    case State::menu_midi:
+    case State::menu_display:
         runMenu(in);
         break;
     }
@@ -90,8 +98,13 @@ void EncoderTask::runMenu(const Input& in)
     }
     else if (in.step != 0)
     {
-        int entry = (menu_entry_ + in.step) % MENU_ENTRIES;
-        menu_entry_ = entry < 0 ? entry + MENU_ENTRIES : entry;
+        int entry = (menu_entry_ + in.step) % menuSize();
+        menu_entry_ = entry < 0 ? entry + menuSize() : entry;
+        if (state_ == State::menu_display)
+        {
+            // Preview: each level shows right away, ESC shows the stored one.
+            setBrightness(atEsc() ? settings_.brightness() : menu_entry_);
+        }
         printMenuEntry();
         show();
     }
@@ -187,22 +200,43 @@ Led& EncoderTask::channelLed(AmpChannel channel)
 
 void EncoderTask::openMenu()
 {
-    state_ = State::menu;
-    menu_entry_ = midi_.setting();
     Serial.println(F("menu on"));
+    enterMenu(State::menu, TOP_MIDI);
+}
+
+void EncoderTask::enterMenu(State state, uint8_t entry)
+{
+    state_ = state;
+    menu_entry_ = entry;
     printMenuEntry();
     show();
 }
 
 void EncoderTask::confirmMenu()
 {
-    if (menu_entry_ == MENU_ESC)
+    switch (state_)
     {
-        Serial.println(F("midi: not saved"));
-    }
-    else
-    {
-        midi_.store(menu_entry_);
+    case State::menu:
+        if (menu_entry_ == TOP_MIDI)
+        {
+            enterMenu(State::menu_midi, settings_.midi());
+        }
+        else if (menu_entry_ == TOP_DISPLAY)
+        {
+            enterMenu(State::menu_display, settings_.brightness());
+        }
+        else
+        {
+            closeMenu();
+        }
+        break;
+    case State::menu_midi:
+        if (atEsc())
+        {
+            enterMenu(State::menu, TOP_MIDI);
+            break;
+        }
+        settings_.store_midi(menu_entry_);
         if (menu_entry_ == MIDI_OMNI_SETTING)
         {
             Serial.println(F("midi: saved omni"));
@@ -212,50 +246,121 @@ void EncoderTask::confirmMenu()
             Serial.print(F("midi: saved channel="));
             Serial.println(menu_entry_);
         }
+        closeMenu();
+        break;
+    case State::menu_display:
+        if (atEsc())
+        {
+            // The ESC entry already shows the stored brightness again.
+            enterMenu(State::menu, TOP_DISPLAY);
+            break;
+        }
+        settings_.store_brightness(menu_entry_);
+        Serial.print(F("display: saved brightness="));
+        Serial.println(menu_entry_ + 1);
+        closeMenu();
+        break;
+    default:
+        break;
     }
+}
+
+void EncoderTask::closeMenu()
+{
     state_ = State::live;
     Serial.println(F("menu off"));
     show();
 }
 
-void EncoderTask::printMenuEntry()
+uint8_t EncoderTask::menuSize() const
 {
-    Serial.print(F("menu: "));
-    if (menu_entry_ == MIDI_OMNI_SETTING)
+    switch (state_)
     {
-        Serial.println(F("ALL"));
+    case State::menu_midi:
+        return MIDI_ENTRIES;
+    case State::menu_display:
+        return DISPLAY_ENTRIES;
+    default:
+        return TOP_ENTRIES;
     }
-    else if (menu_entry_ == MENU_ESC)
+}
+
+bool EncoderTask::atEsc() const
+{
+    return menu_entry_ == menuSize() - 1;
+}
+
+bool EncoderTask::menuText(char text[SEGMENT_DIGITS + 1]) const
+{
+    // Two-letter prefix plus two digits, e.g. "CH" "05".
+    const char* prefix = nullptr;
+    uint8_t value = 0;
+    if (atEsc())
     {
-        Serial.println(F("ESC"));
+        strcpy_P(text, PSTR("ESC"));
+    }
+    else if (state_ == State::menu)
+    {
+        strcpy_P(text, menu_entry_ == TOP_MIDI ? PSTR("Chan") : PSTR("dISP"));
+    }
+    else if (state_ == State::menu_midi && menu_entry_ == MIDI_OMNI_SETTING)
+    {
+        strcpy_P(text, PSTR("ALL"));
+    }
+    else if (state_ == State::menu_midi)
+    {
+        prefix = "CH";
+        value = menu_entry_;
     }
     else
     {
-        Serial.print(F("CH:"));
-        Serial.print(menu_entry_ / 10);
-        Serial.println(menu_entry_ % 10);
+        prefix = "br";
+        value = menu_entry_ + 1;
     }
+    if (prefix == nullptr)
+    {
+        return false;
+    }
+    text[0] = prefix[0];
+    text[1] = prefix[1];
+    text[2] = '0' + value / 10;
+    text[3] = '0' + value % 10;
+    text[4] = '\0';
+    return true;
+}
+
+void EncoderTask::printMenuEntry()
+{
+    char text[SEGMENT_DIGITS + 1];
+    bool colon = menuText(text);
+    Serial.print(F("menu: "));
+    if (colon)
+    {
+        Serial.write(text, 2);
+        Serial.print(':');
+        Serial.println(text + 2);
+    }
+    else
+    {
+        Serial.println(text);
+    }
+}
+
+void EncoderTask::setBrightness(uint8_t brightness)
+{
+    display_.setBrightness(brightness);
+    Serial.print(F("display: brightness="));
+    Serial.println(brightness + 1);
 }
 
 void EncoderTask::show()
 {
-    if (state_ != State::menu)
+    if (state_ == State::live || state_ == State::browsing)
     {
         display_.showNumber(presets_.number() + 1);
+        return;
     }
-    else if (menu_entry_ == MIDI_OMNI_SETTING)
-    {
-        display_.showText("ALL");
-    }
-    else if (menu_entry_ == MENU_ESC)
-    {
-        display_.showText("ESC");
-    }
-    else
-    {
-        // "CH:05": the colon sits between the second and third digit.
-        const char text[] = {'C', 'H', char('0' + menu_entry_ / 10),
-                             char('0' + menu_entry_ % 10), '\0'};
-        display_.showText(text, true);
-    }
+    char text[SEGMENT_DIGITS + 1];
+    bool colon = menuText(text);
+    display_.showText(text, colon);
 }

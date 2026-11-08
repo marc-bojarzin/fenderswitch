@@ -1,6 +1,6 @@
 #include "MidiTask.hpp"
 
-MidiTask::MidiTask(EncoderTask& ui, const MidiSettings& settings)
+MidiTask::MidiTask(EncoderTask& ui, const Settings& settings)
     : ui_{ui}
     , settings_{settings}
 {
