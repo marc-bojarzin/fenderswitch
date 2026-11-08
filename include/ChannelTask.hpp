@@ -24,7 +24,7 @@
 // preset is dirty stores it, like the Store button. Each hold stores at most
 // once; the button has to be released before the next hold counts.
 //
-// The display (LEDs, LCD, Serial) and storing go through EncoderTask, so both
+// The display (LEDs, 7-segment display, Serial) and storing go through EncoderTask, so both
 // tasks show the working buffer the same way.
 class ChannelTask : public Task
 {

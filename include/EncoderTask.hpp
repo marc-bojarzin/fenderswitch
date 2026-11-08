@@ -7,12 +7,12 @@
 #include "AmpChannel.hpp"
 #include "Led.hpp"
 #include "RotaryEncoder.hpp"
-#include "LcdBuffer.hpp"
+#include "SegmentDisplay.hpp"
 #include "OpticalRelay.hpp"
 #include "PresetLoader.hpp"
 
 // How long the encoder has to rest before the amp switches to the browsed
-// program, in ms. Browsing past programs only updates the LCD, so the amp
+// program, in ms. Browsing past programs only updates the display, so the amp
 // doesn't jump through every channel on the way.
 #ifndef BROWSE_SETTLE_MS
 #define BROWSE_SETTLE_MS 300
@@ -27,7 +27,7 @@
 //
 // Every step selects the next (+1) or previous (-1) program, wrapping around
 // between the first and the last. Selecting drops an unsaved change in the
-// working buffer and shows the program on the second LCD line right away. Once
+// working buffer and shows the program number on the display right away. Once
 // the encoder has rested for BROWSE_SETTLE_MS, the amp switches to the preset's
 // channel and its LED lights up.
 //
@@ -40,7 +40,7 @@
 //
 // It also owns the display of the working buffer, used by ChannelTask too: the
 // LED of the active channel is steady while the preset is clean and swells
-// while it is dirty, and the LCD marks a dirty preset with a "*".
+// while it is dirty.
 //
 // Polls every pass. moved() accumulates the steps between polls, so a slow
 // pass doesn't lose any; several steps are applied at once.
@@ -50,7 +50,7 @@ class EncoderTask : public Task
     Button& store_;
     PresetLoader& presets_;
     OpticalRelay& relay_;
-    LcdBuffer& lcd_buffer_;
+    SegmentDisplay& display_;
 
     // Channel LEDs: Clean, Drive and More Drive.
     Led& led_green_;
@@ -71,7 +71,7 @@ public:
 
     // Constructor.
     EncoderTask(RotaryEncoder& encoder, Button& store, PresetLoader& presets,
-                OpticalRelay& relay, LcdBuffer& lcd_buffer,
+                OpticalRelay& relay, SegmentDisplay& display,
                 Led& led_green, Led& led_yellow, Led& led_red);
 
     // Polls the encoder, its button and the Store button; called by
@@ -84,7 +84,7 @@ public:
     void select(uint8_t number);
 
     // Switches the amp to the working buffer's channel and shows it on the
-    // LEDs, Serial and the LCD. Cancels a pending delayed apply.
+    // LEDs, Serial and the display. Cancels a pending delayed apply.
     void apply();
 
     // Stores a dirty working buffer in its preset and EEPROM and shows it as
@@ -100,8 +100,8 @@ private:
     // Returns the LED of channel.
     Led& channelLed(AmpChannel channel);
 
-    // Writes the program (1-based, as on MIDI gear), its channel and a "*"
-    // while dirty, or the menu placeholder, to the second LCD line.
+    // Shows the program number (1-based, as on MIDI gear), or the menu
+    // placeholder "----", on the display.
     void show();
 };
 

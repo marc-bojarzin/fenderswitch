@@ -33,7 +33,7 @@ All programs start out as **Clean**, the factory preset. You change a preset wit
 
 ### Display and controls
 
-An internal LCD shows the current program and its channel. It also shows the configuration menus, for example for setting the MIDI channel and turning OMNI mode on or off. A rotary encoder with a built-in push button lets you move through the menus and browse quickly through the presets. The **Store** button next to it saves a modified preset, and in the menus it confirms the MIDI settings and writes them to EEPROM.
+An internal 4-digit 7-segment display (TM1637, with a colon) shows the current program number. It will also show the configuration menus, for example for setting the MIDI channel and turning OMNI mode on or off. A rotary encoder with a built-in push button lets you move through the menus and browse quickly through the presets. The **Store** button next to it saves a modified preset, and in the menus it confirms the MIDI settings and writes them to EEPROM.
 
 ## Features
 
@@ -42,7 +42,7 @@ An internal LCD shows the current program and its channel. It also shows the con
 - 128 presets stored in EEPROM, edited directly with the channel buttons
 - MIDI IN: Program Change recalls the matching preset
 - Configurable MIDI channel and OMNI mode
-- LCD with menus, navigated by a rotary encoder with a push button
+- 4-digit 7-segment display with menus, navigated by a rotary encoder with a push button
 - Store button: saves a modified preset with one push, confirms settings in the menus
 - Photorelays driven straight from the microcontroller's pins, no transistor stage
 
@@ -66,7 +66,7 @@ Source: Fender schematic 050384 rev. B and footswitch assembly 050419. The volta
 | Ref. | Component | Notes |
 |------|-----------|-------|
 | | Arduino Nano (ATmega328P) | CH340 clone with the old bootloader (uploads at 57600 baud), runs at 5 V |
-| | 16x2 character LCD with I2C backpack | Address `0x27` (A0–A2 not jumpered) |
+| | 4-digit 7-segment display with colon, TM1637 module | CLK/DIO two-wire bus (not I2C) |
 | | Rotary encoder with push button | Bare 5-pin mechanical encoder (EC11 style) |
 | R × 2 | 10 kΩ | Encoder: pull-ups from A and B to 5 V |
 | | 3 × LED | Green, yellow and red channel indicators, each with a series resistor |
@@ -154,13 +154,13 @@ The LEDs are wired just like the photorelay inputs, so they behave the same, inc
 | D9 | Red LED | More Drive, PWM (swell) |
 | D10 | Yellow LED | Drive, PWM (swell) |
 | D11 | Green LED | Clean, PWM (swell) |
-| A4 (SDA) | LCD SDA | I2C |
-| A5 (SCL) | LCD SCL | I2C |
+| A4 | Display DIO | TM1637, bit-banged |
+| A5 | Display CLK | TM1637, bit-banged |
 | A0 | Clean button | To GND, `INPUT_PULLUP` |
 | A1 | Drive button | To GND, `INPUT_PULLUP` |
 | A2 | More Drive button | To GND, `INPUT_PULLUP` |
 | A3 | Store button | To GND, `INPUT_PULLUP` |
-| 5V / GND | LCD VCC, encoder pull-ups, and GND for all modules (including encoder C and SW and the relay LED cathodes) | |
+| 5V / GND | Display VCC, encoder pull-ups, and GND for all modules (including encoder C and SW and the relay LED cathodes) | |
 
 The channel LEDs must be on PWM pins, because a dirty preset makes its LED swell with `analogWrite()`. OUT_CH and OUT_GAIN only switch, so they use the non-PWM pins D7 and D8. Don't use D13 for OUT_CH or OUT_GAIN: the bootloader blinks the on-board LED on it, which would switch the relay.
 
@@ -244,7 +244,7 @@ flowchart TD
     Enc["rotary encoder<br>(browse presets)"] --> Load
     Load --> Mode["target channel"]
     Mode --> Apply["apply relay sequence<br>(make-before-break, 5 ms)"]
-    Apply --> UI["update LEDs and LCD"]
+    Apply --> UI["update LEDs and display"]
 
     Btn["channel button pressed<br>(debounced)"] --> Diff{"differs from<br>stored preset?"}
     Diff -- "yes: dirty" --> Blink["swell channel LED"]
@@ -295,7 +295,7 @@ python docs/schematics.py
 
 ### Selecting a program
 
-Send a MIDI Program Change, or browse the presets with the rotary encoder: turn right for the next program, left for the previous one. Browsing wraps around, so turning right from program 128 gets you to program 1 and vice versa. The device loads the preset for that program and switches the amp to the stored channel. The LCD shows the current program (1–128) and its channel. While you turn the encoder only the LCD follows; the amp switches once the encoder has rested for 300 ms (`BROWSE_SETTLE_MS`), so it doesn't jump through every channel on the way. A MIDI Program Change switches the amp right away.
+Send a MIDI Program Change, or browse the presets with the rotary encoder: turn right for the next program, left for the previous one. Browsing wraps around, so turning right from program 128 gets you to program 1 and vice versa. The device loads the preset for that program and switches the amp to the stored channel. The display shows the current program (1–128). While you turn the encoder only the display follows; the amp switches once the encoder has rested for 300 ms (`BROWSE_SETTLE_MS`), so it doesn't jump through every channel on the way. A MIDI Program Change switches the amp right away.
 
 ### MIDI
 
@@ -329,7 +329,7 @@ Opening the port resets the Nano (auto-reset over DTR), so the amp briefly goes 
 [tools/footboard/](tools/footboard/) is a small Node.js test rig with two separate web devices, connected only through the Nano's USB serial port:
 
 - **MIDI footboard** (`/footboard.html`): behaves like a plain hardware footboard. Four footswitches per bank (32 banks for programs 1–128), bank up/down, direct entry, and a 3-digit 7-segment display with the program last sent. It only sends Program Change and knows nothing about the presets. It writes the bytes straight to the serial port, so it needs neither the bridge nor ALSA.
-- **Device monitor** (`/monitor.html`): the fenderswitch's LCD and channel LEDs, plus a log of the MIDI bytes sent and the firmware's serial output. It reads the firmware's debug text, a return path that only exists because USB carries both directions; a real MIDI cable has none.
+- **Device monitor** (`/monitor.html`): the fenderswitch's 7-segment display (program number, `----` in menu mode) and channel LEDs, plus a log of the MIDI bytes sent and the firmware's serial output. It reads the firmware's debug text, a return path that only exists because USB carries both directions; a real MIDI cable has none.
 
 The start page (`/`) shows both side by side. Each one also works on its own, for example the footboard on a phone.
 
@@ -357,7 +357,7 @@ Don't send from both at the same time: the two streams would mix on the shared l
 All 128 presets are initialized to **Clean** in the EEPROM. This is the **factory preset**.
 
 1. Press one of the three channel buttons, for example **Drive**. The amp switches to that channel right away.
-2. If the new channel differs from the one stored in the preset, its LED **swells** (fades up and down) and the LCD shows a `*` after the channel, for example `P12  Drive*`. This means the preset is **dirty**: the current state is modified but not saved.
+2. If the new channel differs from the one stored in the preset, its LED **swells** (fades up and down). This means the preset is **dirty**: the current state is modified but not saved.
 3. Press the button of the stored channel to go back to it. The preset is clean again and the LED lights steadily.
 4. To keep the change instead, **hold the same channel button for 2 seconds**, or **press Store** once. The new channel is written to the preset in EEPROM and the LED stops swelling. If the preset has no unsaved change, there is nothing to store: the LED goes dark for a moment to show that the press was registered.
 
@@ -376,13 +376,14 @@ Press the encoder's push button to enter menu mode, and press it again to leave.
 | [src/main.cpp](src/main.cpp) | Setup and main loop |
 | [include/Task.hpp](include/Task.hpp) | Cooperative tasks (protothread style) and the round-robin scheduler, no `delay()` anywhere |
 | [include/RotaryEncoder.hpp](include/RotaryEncoder.hpp) | Decodes the rotary encoder (quadrature, pin-change interrupt on both pins) and debounces its push button, explained in detail in [docs/rotary_encoder.md](docs/rotary_encoder.md) |
-| [include/LcdBuffer.hpp](include/LcdBuffer.hpp) | Shadow buffer for the 16x2 LCD, writes only the characters that changed |
+| [include/SegmentDisplay.hpp](include/SegmentDisplay.hpp) | 4-digit TM1637 7-segment display: numbers, short texts, colon; talks to the chip only when something changed |
+| [include/LcdBuffer.hpp](include/LcdBuffer.hpp) | Shadow buffer for the 16x2 LCD, writes only the characters that changed (currently unused, replaced by the 7-segment display) |
 | [include/AmpChannel.hpp](include/AmpChannel.hpp) | The three amp channels (Clean, Drive, More Drive) |
 | [include/Preset.hpp](include/Preset.hpp) | The channel stored for one MIDI program, loads from and flushes to the EEPROM byte of a given program number |
 | [include/PresetLoader.hpp](include/PresetLoader.hpp) | All 128 presets in RAM plus the working buffer, dirty tracking and storing |
 | [include/OpticalRelay.hpp](include/OpticalRelay.hpp) | Drives the two photorelays, switching make-before-break |
 | [include/Led.hpp](include/Led.hpp) | On/off LED with slow/fast blinking, swelling (PWM), a one-shot flash and a short wink (off, then on again) |
-| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" toggles menu mode, Store saves a dirty preset. Also shows the working buffer: steady or swelling LED, `*` on the LCD while dirty |
+| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" toggles menu mode, Store saves a dirty preset. Also shows the working buffer: steady or swelling LED while dirty |
 | [include/MidiTask.hpp](include/MidiTask.hpp) | MIDI IN: reads the UART, filters by MIDI channel or OMNI, and recalls the preset of each Program Change right away |
 | [include/MidiParser.hpp](include/MidiParser.hpp) | Byte-by-byte MIDI parser: running status, real-time bytes in the middle of messages, SysEx and stray data bytes |
 | [include/ChannelTask.hpp](include/ChannelTask.hpp) | The three channel buttons: a press switches the amp right away, holding the current channel's button for 2 s stores a dirty preset |

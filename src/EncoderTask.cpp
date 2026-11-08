@@ -5,13 +5,13 @@ static const char* const channel_names[AMP_CHANNEL_COUNT] = {"Clean", "Drive", "
 
 EncoderTask::EncoderTask(RotaryEncoder& encoder, Button& store,
                          PresetLoader& presets, OpticalRelay& relay,
-                         LcdBuffer& lcd_buffer, Led& led_green,
+                         SegmentDisplay& display, Led& led_green,
                          Led& led_yellow, Led& led_red)
     : encoder_{encoder}
     , store_{store}
     , presets_{presets}
     , relay_{relay}
-    , lcd_buffer_{lcd_buffer}
+    , display_{display}
     , led_green_{led_green}
     , led_yellow_{led_yellow}
     , led_red_{led_red}
@@ -88,9 +88,8 @@ void EncoderTask::store()
     Serial.print(presets_.number() + 1);
     Serial.print(F(" channel="));
     Serial.println(channel_names[channel_index(presets_.working().channel())]);
-    // Clean again: the channel LED stops swelling, the "*" goes away.
+    // Clean again: the channel LED stops swelling.
     showChannel();
-    show();
 }
 
 void EncoderTask::showChannel()
@@ -132,17 +131,12 @@ Led& EncoderTask::channelLed(AmpChannel channel)
 
 void EncoderTask::show()
 {
-    char line[LCD_COLS + 1];
     if (menu_)
     {
-        snprintf(line, sizeof(line), "Menu");
+        display_.showText("----");
     }
     else
     {
-        // "P128 More Drive*" is exactly 16 characters.
-        snprintf(line, sizeof(line), "P%-3u %s%s", presets_.number() + 1,
-                 channel_names[channel_index(presets_.working().channel())],
-                 presets_.dirty() ? "*" : "");
+        display_.showNumber(presets_.number() + 1);
     }
-    lcd_buffer_.write(1, 0, line, LCD_COLS);
 }
