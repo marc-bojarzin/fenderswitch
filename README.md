@@ -295,7 +295,7 @@ python docs/schematics.py
 
 ### Selecting a program
 
-Send a MIDI Program Change, or browse the presets with the rotary encoder: turn right for the next program, left for the previous one. Browsing wraps around, so turning right from program 128 gets you to program 1 and vice versa. The device loads the preset for that program and switches the amp to the stored channel. The display shows the current program (1–128) on the right three digits, and the preset's channel as a staircase of bars in the leftmost digit: one bar (`_`) for Clean, two (`=`) for Drive, three (`≡`) for More Drive. More bars, more gain. While you turn the encoder only the display follows; the amp switches once the encoder has rested for 300 ms (`BROWSE_SETTLE_MS`), so it doesn't jump through every channel on the way. A MIDI Program Change switches the amp right away.
+Send a MIDI Program Change, or browse the presets with the rotary encoder: turn right for the next program, left for the previous one. Browsing wraps around, so turning right from program 128 gets you to program 1 and vice versa. The device loads the preset for that program and switches the amp to the stored channel. The display shows the current program (1–128) on the right three digits, and the preset's channel as a staircase of bars in the leftmost digit: one bar (`_`) for Clean, two (`=`) for Drive, three (`≡`) for More Drive. More bars, more gain. While you turn the encoder only the display follows; the amp switches once the encoder has rested for 150 ms (`BROWSE_SETTLE_MS`), so it doesn't jump through every channel on the way. A MIDI Program Change switches the amp right away.
 
 ### MIDI
 

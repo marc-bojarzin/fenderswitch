@@ -16,7 +16,7 @@
 // program, in ms. Browsing past programs only updates the display, so the amp
 // doesn't jump through every channel on the way.
 #ifndef BROWSE_SETTLE_MS
-#define BROWSE_SETTLE_MS 300
+#define BROWSE_SETTLE_MS 150
 #endif
 
 // How long the channel LED goes dark when there is nothing to store, in ms.
