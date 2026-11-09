@@ -189,44 +189,42 @@ bool RotaryEncoder::enter_pressed()
 }
 ```
 
-The button is polled, not interrupt driven, and debounced in software:
+The button is polled, not interrupt driven, and debounced in software on the leading edge:
 
 ```cpp
 bool Button::pressed()
 {
-    uint8_t raw = digitalRead(pin_);
     uint32_t now = millis();
-    if (raw != raw_)
+    if (now - changed_at_ < BUTTON_DEBOUNCE_MS)
     {
-        // Still bouncing: restart the debounce interval.
-        raw_ = raw;
-        changed_at_ = now;
+        // Still bouncing from the last change.
         return false;
     }
-    if (raw == stable_ || now - changed_at_ < BUTTON_DEBOUNCE_MS)
+    uint8_t raw = digitalRead(pin_);
+    if (raw == stable_)
     {
         return false;
     }
     stable_ = raw;
+    changed_at_ = now;
     return raw == LOW;
 }
 ```
 
-Three members track the button:
+Two members track the button:
 
 | Member | Meaning |
 |--------|---------|
-| `raw_` | level at the previous call |
-| `changed_at_` | when `raw_` last changed |
 | `stable_` | the debounced level |
+| `changed_at_` | when `stable_` last changed; while the button is down, when it was pressed |
 
 Each call:
 
-1. If the level differs from the previous call, the contact is still moving. Restart the timer.
-2. If the level hasn't been stable for `BUTTON_DEBOUNCE_MS` (30 ms) yet, or already equals the debounced level, nothing happens.
-3. Otherwise, accept the new level. Report `true` if it is LOW (pressed). The release is accepted too, but not reported.
+1. If the last accepted change is less than `BUTTON_DEBOUNCE_MS` (30 ms) ago, the contact may still be bouncing. Ignore the pin.
+2. If the level equals the debounced level, nothing happens.
+3. Otherwise, accept the new level right away and start the lockout. Report `true` if it is LOW (pressed). The release is accepted too, but not reported.
 
-So `enter_pressed()` returns `true` exactly once per press, 30 ms after the contact settles. `now - changed_at_` is computed in unsigned arithmetic, so it stays correct when `millis()` wraps around after about 49 days.
+So `enter_pressed()` returns `true` exactly once per press, on the first LOW reading, within one loop pass. A mechanical contact bounces only after it has closed, so the lockout swallows the bounce without delaying the press. `begin()` takes the pin's level at startup as the debounced level, so a button held at power-up doesn't count as a press. `now - changed_at_` is computed in unsigned arithmetic, so it stays correct when `millis()` wraps around after about 49 days.
 
 ## Known limitations
 

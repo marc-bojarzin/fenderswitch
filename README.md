@@ -229,7 +229,7 @@ Firmware notes:
 - Write HIGH to OUT_CH and OUT_GAIN **before** setting them to `OUTPUT`, so the pins go straight from Hi-Z to HIGH and the amp leaves More Drive for Clean as early as possible. The `OpticalRelay` constructor does this, before `setup()` runs.
 - Start with the preset of program 1 (Clean on a fresh EEPROM).
 - Enable the watchdog, so a hung microcontroller restarts. It passes through More Drive while it resets and boots.
-- Debounce the buttons in software (about 30 ms).
+- Debounce the buttons in software on the leading edge: a press counts on the first LOW reading, then the pin is ignored for 30 ms while the contact bounces.
 
 ## Firmware flow
 
