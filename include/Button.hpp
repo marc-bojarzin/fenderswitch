@@ -3,12 +3,25 @@
 
 #include <Arduino.h>
 
+// After a debounced change, changes are ignored this long, in ms. Must cover
+// the contact's bounce time.
+#ifndef BUTTON_DEBOUNCE_MS
+#define BUTTON_DEBOUNCE_MS 30
+#endif
+
 // Momentary push button from a pin to GND, on the internal pull-up.
 //
 // Polled, not interrupt driven: call pressed() often, e.g. on every loop()
-// pass. A level change only counts once it has been stable for
-// BUTTON_DEBOUNCE_MS. down() and held_for() report the state as of the last
-// call to pressed().
+// pass. down() and held_for() report the state as of the last call to
+// pressed().
+//
+// Debounced on the leading edge: a press counts on the first LOW reading
+// after the button has rested, so it reacts within one loop pass instead of
+// waiting out the bounce. A mechanical contact only bounces after it has
+// closed, so the bounce is skipped by ignoring the pin for
+// BUTTON_DEBOUNCE_MS after each change, the release included. The buttons
+// sit on short wires inside the box; a long, noisy line would need a
+// confirming second reading.
 class Button
 {
     // Input pin, active low.
@@ -17,25 +30,21 @@ class Button
     // Debounced level (HIGH = released).
     uint8_t stable_ = HIGH;
 
-    // Level at the last call to pressed().
-    uint8_t raw_ = HIGH;
-
-    // millis() of the last change in raw_.
+    // millis() of the last debounced change, i.e. of the press while down.
     uint32_t changed_at_ = 0;
-    // millis() of the last debounced press.
-    uint32_t pressed_at_ = 0;
-
-    // The level must be stable this long before a change is accepted, in ms.
-    static const uint8_t BUTTON_DEBOUNCE_MS = 30;
 
 public:
     // Not default constructible.
     Button() = delete;
 
-    // Sets pin to INPUT_PULLUP.
+    // Constructor. Doesn't touch the pin yet; call begin() in setup().
     Button(uint8_t pin);
 
-    // Returns true once per press (on the debounced press, not the release).
+    // Sets the pin to INPUT_PULLUP and takes its level as the starting
+    // state, so a button held at power-up doesn't count as a press.
+    void begin();
+
+    // Returns true once per press (on the press, not the release).
     bool pressed();
 
     // Returns true while the button is held down (debounced).

@@ -3,29 +3,32 @@
 Button::Button(uint8_t pin)
     : pin_{pin}
 {
+}
+
+void Button::begin()
+{
     pinMode(pin_, INPUT_PULLUP);
+    // Give the pull-up a moment to charge the line before the first read.
+    delayMicroseconds(10);
+    stable_ = digitalRead(pin_);
+    changed_at_ = millis();
 }
 
 bool Button::pressed()
 {
-    uint8_t raw = digitalRead(pin_);
     uint32_t now = millis();
-    if (raw != raw_)
+    if (now - changed_at_ < BUTTON_DEBOUNCE_MS)
     {
-        // Still bouncing: restart the debounce interval.
-        raw_ = raw;
-        changed_at_ = now;
+        // Still bouncing from the last change.
         return false;
     }
-    if (raw == stable_ || now - changed_at_ < BUTTON_DEBOUNCE_MS)
+    uint8_t raw = digitalRead(pin_);
+    if (raw == stable_)
     {
         return false;
     }
     stable_ = raw;
-    if (raw == LOW)
-    {
-        pressed_at_ = now;
-    }
+    changed_at_ = now;
     return raw == LOW;
 }
 
@@ -36,5 +39,5 @@ bool Button::down() const
 
 uint32_t Button::held_for() const
 {
-    return down() ? millis() - pressed_at_ : 0;
+    return down() ? millis() - changed_at_ : 0;
 }

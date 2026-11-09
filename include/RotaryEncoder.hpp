@@ -52,12 +52,15 @@ class RotaryEncoder
     Button sw_;
 
 public:
+    // Constructor. Doesn't touch the pins yet; call begin() in setup().
+    RotaryEncoder(uint8_t clk_pin, uint8_t dta_pin, uint8_t sw_pin);
+
     // Sets CLK and DTA to INPUT_PULLUP, since a bare encoder only shorts them
     // to GND (C). SW gets the internal pull-up through Button. External
     // pull-ups (e.g. on a KY-040 module) work as well.
     // Reads the current CLK and DTA levels as the starting point. Doesn't
-    // set up the interrupt; the sketch must do that.
-    RotaryEncoder(uint8_t clk_pin, uint8_t dta_pin, uint8_t sw_pin);
+    // set up the interrupt; the sketch must do that, after this call.
+    void begin();
 
     // ISR handler: call on every edge of CLK and of DTA.
     void on_change();

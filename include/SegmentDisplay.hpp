@@ -56,8 +56,10 @@ public:
     void clear();
 
     // Shows value right-aligned without leading zeros, e.g. "  12". Values
-    // above 9999 show "----". The colon is on or off as given.
-    void showNumber(uint16_t value, bool colon = false);
+    // above 9999 show "----". The colon is on or off as given. lead gives raw
+    // segments for the leftmost digit (e.g. a symbol in front of the number);
+    // it only shows while value leaves that digit blank, i.e. up to 999.
+    void showNumber(uint16_t value, bool colon = false, uint8_t lead = 0);
 
     // Shows up to SEGMENT_DIGITS characters left-aligned, padded with blanks,
     // e.g. "CH16" (with colon: "CH:16") or "ALL". Knows digits, letters (as

@@ -92,9 +92,11 @@
     statusEl.classList.toggle('ok', device.connected);
     statusText.textContent = device.connected ? 'connected' : 'not connected';
 
-    // Same as the device: the program number, right-aligned.
-    if (device.program && !menu) showSeg(String(device.program));
+    // Same as the device: the channel symbol, then the program number,
+    // right-aligned.
     lastProgram = device.program;
+    lastChannel = device.ampChannel;
+    if (device.program) refreshSeg();
     for (const [name, led] of Object.entries(leds)) {
       const on = name === device.ampChannel;
       led.classList.toggle('on', on);
@@ -117,10 +119,13 @@
     '0': 'abcdef', '1': 'bc', '2': 'abdeg', '3': 'abcdg', '4': 'bcfg',
     '5': 'acdfg', '6': 'acdefg', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg',
     '-': 'g', ' ': '',
+    // Channel symbols in front of the program number: a staircase of bars.
+    '_': 'd', '=': 'dg', '≡': 'adg',
     // Letters of the menu entries (Chan, dISP, ALL, CH:05, br:05, ESC), as
     // the firmware draws them.
     'A': 'abcefg', 'C': 'adef', 'E': 'adefg', 'H': 'bcefg', 'I': 'ef', 'L': 'def',
     'P': 'abefg', 'S': 'acdfg', 'a': 'abcefg', 'b': 'cdefg', 'd': 'bcdeg', 'h': 'cefg', 'n': 'ceg', 'r': 'eg',
+    'o': 'cdeg',
   };
   const SVG_NS = 'http://www.w3.org/2000/svg';
   const segEl = document.getElementById('seg');
@@ -177,21 +182,66 @@
   // device shows.
   let menu = false;
   let lastProgram = null;
+  let lastChannel = null;
+  const CHANNEL_SYMBOLS = { 'Clean': '_', 'Drive': '=', 'More Drive': '≡' };
+  // What the device shows outside the menu, e.g. "≡128" or "_  7".
+  function programText() {
+    if (!lastProgram) return '';
+    return (CHANNEL_SYMBOLS[lastChannel] ?? ' ') + String(lastProgram).padStart(3, ' ');
+  }
+
+  // Overlays outside the menu, as on the device: "donE" for 600 ms after a
+  // store (STORE_DONE_MS), the colon for 60 ms on a Program Change
+  // (MIDI_COLON_MS). The timing is approximate: it follows the log lines.
+  let done = false;
+  let midiColon = false;
+  let doneTimer = null;
+  let colonTimer = null;
+  function refreshSeg() {
+    if (menu) return;
+    if (done) showSeg('donE', false, true);
+    else showSeg(programText(), midiColon);
+  }
+  function overlay(text) {
+    if (text.startsWith('stored program=')) {
+      done = true;
+      clearTimeout(doneTimer);
+      doneTimer = setTimeout(() => { done = false; refreshSeg(); }, 600);
+      refreshSeg();
+    } else if (text.startsWith('midi: program change')) {
+      midiColon = true;
+      clearTimeout(colonTimer);
+      colonTimer = setTimeout(() => { midiColon = false; refreshSeg(); }, 60);
+    } else if (text.startsWith('program=') && done) {
+      // Any input drops "donE" on the device.
+      done = false;
+      refreshSeg();
+    }
+  }
+
+  // Display level from the brightness setting; the device dims to the
+  // lowest level when idle and comes back on the next input.
+  let segLevel = 1;
+  const setSegLevel = (level) => segEl.style.setProperty('--seg-level', level);
   function trackMenu(text) {
     const entry = /^menu: (.+)$/.exec(text);
     const brightness = /^display: brightness=([1-8])$/.exec(text);
     if (brightness) {
       // Level 1-8 -> opacity 0.3-1, roughly how the TM1637 dims.
-      segEl.style.setProperty('--seg-level', 0.3 + (0.7 * (brightness[1] - 1)) / 7);
+      segLevel = 0.3 + (0.7 * (brightness[1] - 1)) / 7;
+      setSegLevel(segLevel);
       return;
     }
+    if (text === 'display: dimmed') { setSegLevel(0.3); return; }
+    if (text === 'display: awake') { setSegLevel(segLevel); return; }
+    overlay(text);
     if (text === 'menu on') {
       menu = true;
     } else if (entry && menu) {
       showSeg(entry[1].replace(':', ''), entry[1].includes(':'), true);
     } else if (text === 'menu off') {
       menu = false;
-      showSeg(lastProgram ? String(lastProgram) : '');
+      refreshSeg();
     }
   }
 

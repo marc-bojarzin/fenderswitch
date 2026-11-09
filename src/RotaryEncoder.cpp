@@ -9,6 +9,11 @@ RotaryEncoder::RotaryEncoder(uint8_t clk_pin, uint8_t dta_pin, uint8_t sw_pin)
     , dta_pin_{dta_pin}
     , sw_{sw_pin}
 {
+}
+
+void RotaryEncoder::begin()
+{
+    sw_.begin();
     // A bare encoder has no pull-ups: its contacts only short A/B to C (GND).
     pinMode(clk_pin_, INPUT_PULLUP);
     pinMode(dta_pin_, INPUT_PULLUP);

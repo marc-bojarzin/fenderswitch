@@ -16,12 +16,28 @@
 // program, in ms. Browsing past programs only updates the display, so the amp
 // doesn't jump through every channel on the way.
 #ifndef BROWSE_SETTLE_MS
-#define BROWSE_SETTLE_MS 300
+#define BROWSE_SETTLE_MS 150
 #endif
 
 // How long the channel LED goes dark when there is nothing to store, in ms.
 #ifndef NOTHING_TO_STORE_MS
 #define NOTHING_TO_STORE_MS 150
+#endif
+
+// How long the display shows "donE" after a preset was stored, in ms.
+#ifndef STORE_DONE_MS
+#define STORE_DONE_MS 600
+#endif
+
+// How long the colon lights up when a MIDI Program Change arrives, in ms.
+#ifndef MIDI_COLON_MS
+#define MIDI_COLON_MS 60
+#endif
+
+// After this long without input (encoder, buttons, MIDI), the display dims to
+// its lowest brightness until the next input, in ms. 0 = never dim.
+#ifndef IDLE_DIM_MS
+#define IDLE_DIM_MS 300000UL
 #endif
 
 // Browses the presets with the rotary encoder.
@@ -53,6 +69,12 @@
 // It also owns the display of the working buffer, used by ChannelTask too: the
 // LED of the active channel is steady while the preset is clean and swells
 // while it is dirty.
+//
+// On top of the program number, the display shows for a moment:
+//   - "donE" for STORE_DONE_MS after a preset was stored,
+//   - the colon for MIDI_COLON_MS when a MIDI Program Change arrives,
+// and after IDLE_DIM_MS without input it dims to its lowest brightness; the
+// next input brings the stored brightness back.
 //
 // A state machine:
 //
@@ -115,6 +137,17 @@ class EncoderTask : public Task
     // millis() of the last encoder step, while browsing.
     uint32_t moved_at_ = 0;
 
+    // millis() of the last input, and whether the display is dimmed since.
+    uint32_t active_at_ = 0;
+    bool dimmed_ = false;
+
+    // "donE" after storing, and the colon after a MIDI Program Change: shown
+    // while set, cleared STORE_DONE_MS / MIDI_COLON_MS after their start.
+    bool done_ = false;
+    uint32_t done_at_ = 0;
+    bool midi_colon_ = false;
+    uint32_t midi_colon_at_ = 0;
+
 public:
     // Not default constructible.
     EncoderTask() = delete;
@@ -128,9 +161,9 @@ public:
     // runTasks().
     void run() override;
 
-    // Selects program number (0-127) right away, e.g. after a MIDI Program
-    // Change: drops an unsaved change, switches the amp without the browse
-    // delay and cancels a pending browse.
+    // Selects program number (0-127) right away after a MIDI Program Change:
+    // drops an unsaved change, switches the amp without the browse delay,
+    // cancels a pending browse and flashes the colon.
     void select(uint8_t number);
 
     // Switches the amp to the working buffer's channel and shows it on the
@@ -187,12 +220,21 @@ private:
     // Writes the menu entry to Serial, e.g. "menu: CH:05".
     void printMenuEntry();
 
+    // Counts as input: restarts the idle time, undims the display and drops
+    // "donE".
+    void wake();
+
+    // Dims the display once it has been idle for IDLE_DIM_MS, and ends the
+    // "donE" and colon overlays when their time is up.
+    void runTimers();
+
     // Sets the display brightness (0-7) and reports it on Serial, e.g.
     // "display: brightness=5" (1-8, as in the menu).
     void setBrightness(uint8_t brightness);
 
-    // Shows the program number (1-based, as on MIDI gear), or the menu entry,
-    // on the display.
+    // Shows the program number (1-based, as on MIDI gear) with the working
+    // buffer's channel as a bar symbol in the leftmost digit, "donE", or the
+    // menu entry, on the display.
     void show();
 };
 

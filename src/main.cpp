@@ -139,6 +139,11 @@ void setup() {
     settings.begin();
     display.begin(settings.brightness());
     presets.begin();
+    encoder.begin();
+    store_button.begin();
+    clean_button.begin();
+    drive_button.begin();
+    more_button.begin();
     if (settings.midi() == MIDI_OMNI_SETTING)
     {
         Serial.println(F("midi: omni"));

@@ -86,7 +86,7 @@ void SegmentDisplay::clear()
     update(blank, false);
 }
 
-void SegmentDisplay::showNumber(uint16_t value, bool colon)
+void SegmentDisplay::showNumber(uint16_t value, bool colon, uint8_t lead)
 {
     uint8_t digits[SEGMENT_DIGITS];
     if (value > 9999)
@@ -101,6 +101,10 @@ void SegmentDisplay::showNumber(uint16_t value, bool colon)
             bool blank = value == 0 && i < SEGMENT_DIGITS - 1;
             digits[i] = blank ? 0 : encode('0' + value % 10);
             value /= 10;
+        }
+        if (digits[0] == 0)
+        {
+            digits[0] = lead;
         }
     }
     update(digits, colon);
