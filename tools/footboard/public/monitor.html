@@ -92,9 +92,11 @@
     statusEl.classList.toggle('ok', device.connected);
     statusText.textContent = device.connected ? 'connected' : 'not connected';
 
-    // Same as the device: the program number, right-aligned.
-    if (device.program && !menu) showSeg(String(device.program));
+    // Same as the device: the channel symbol, then the program number,
+    // right-aligned.
     lastProgram = device.program;
+    lastChannel = device.ampChannel;
+    if (device.program && !menu) showSeg(programText());
     for (const [name, led] of Object.entries(leds)) {
       const on = name === device.ampChannel;
       led.classList.toggle('on', on);
@@ -117,6 +119,8 @@
     '0': 'abcdef', '1': 'bc', '2': 'abdeg', '3': 'abcdg', '4': 'bcfg',
     '5': 'acdfg', '6': 'acdefg', '7': 'abc', '8': 'abcdefg', '9': 'abcdfg',
     '-': 'g', ' ': '',
+    // Channel symbols in front of the program number: a staircase of bars.
+    '_': 'd', '=': 'dg', '≡': 'adg',
     // Letters of the menu entries (Chan, dISP, ALL, CH:05, br:05, ESC), as
     // the firmware draws them.
     'A': 'abcefg', 'C': 'adef', 'E': 'adefg', 'H': 'bcefg', 'I': 'ef', 'L': 'def',
@@ -177,6 +181,13 @@
   // device shows.
   let menu = false;
   let lastProgram = null;
+  let lastChannel = null;
+  const CHANNEL_SYMBOLS = { 'Clean': '_', 'Drive': '=', 'More Drive': '≡' };
+  // What the device shows outside the menu, e.g. "≡128" or "_  7".
+  function programText() {
+    if (!lastProgram) return '';
+    return (CHANNEL_SYMBOLS[lastChannel] ?? ' ') + String(lastProgram).padStart(3, ' ');
+  }
   function trackMenu(text) {
     const entry = /^menu: (.+)$/.exec(text);
     const brightness = /^display: brightness=([1-8])$/.exec(text);
@@ -191,7 +202,7 @@
       showSeg(entry[1].replace(':', ''), entry[1].includes(':'), true);
     } else if (text === 'menu off') {
       menu = false;
-      showSeg(lastProgram ? String(lastProgram) : '');
+      showSeg(programText());
     }
   }
 

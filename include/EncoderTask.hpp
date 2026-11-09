@@ -191,8 +191,9 @@ private:
     // "display: brightness=5" (1-8, as in the menu).
     void setBrightness(uint8_t brightness);
 
-    // Shows the program number (1-based, as on MIDI gear), or the menu entry,
-    // on the display.
+    // Shows the program number (1-based, as on MIDI gear) with the working
+    // buffer's channel as a bar symbol in the leftmost digit, or the menu
+    // entry, on the display.
     void show();
 };
 

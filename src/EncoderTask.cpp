@@ -2,6 +2,14 @@
 
 static const char* const channel_names[AMP_CHANNEL_COUNT] = {"Clean", "Drive", "More Drive"};
 
+// Channel symbols for the leftmost digit, a staircase of bars: more bars,
+// more gain. Clean "_", Drive "=", More Drive three bars.
+static const uint8_t channel_symbols[AMP_CHANNEL_COUNT] = {
+    SEG_D,
+    SEG_D | SEG_G,
+    SEG_D | SEG_G | SEG_A,
+};
+
 // Top menu entries.
 #define TOP_MIDI     0
 #define TOP_DISPLAY  1
@@ -357,7 +365,10 @@ void EncoderTask::show()
 {
     if (state_ == State::live || state_ == State::browsing)
     {
-        display_.showNumber(presets_.number() + 1);
+        // Programs go up to 128, so the leftmost digit is free for the
+        // channel symbol.
+        uint8_t symbol = channel_symbols[channel_index(presets_.working().channel())];
+        display_.showNumber(presets_.number() + 1, false, symbol);
         return;
     }
     char text[SEGMENT_DIGITS + 1];
