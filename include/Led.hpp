@@ -51,6 +51,7 @@ class Led : public Task
 
     // How long flash() keeps the LED on, in ms.
     unsigned duration_ = 0;
+
     // Position in the swell cycle, 0-511: rising up to 255, then falling.
     uint16_t phase_ = 0;
 
