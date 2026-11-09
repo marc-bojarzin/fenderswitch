@@ -54,15 +54,17 @@ public:
     bool accepts(uint8_t channel) const;
 
     // Sets the MIDI setting (0 = OMNI, 1-16 = channel) and writes it to
-    // EEPROM. Other values are ignored.
-    void store_midi(uint8_t midi);
+    // EEPROM, unless the EEPROM already holds it. Other values are ignored.
+    // Returns true if the EEPROM was written.
+    bool store_midi(uint8_t midi);
 
     // Returns the display brightness, 0-7.
     uint8_t brightness() const;
 
-    // Sets the display brightness (0-7) and writes it to EEPROM. Other
-    // values are ignored. Doesn't touch the display itself.
-    void store_brightness(uint8_t brightness);
+    // Sets the display brightness (0-7) and writes it to EEPROM, unless the
+    // EEPROM already holds it. Other values are ignored. Doesn't touch the
+    // display itself. Returns true if the EEPROM was written.
+    bool store_brightness(uint8_t brightness);
 };
 
 #endif // SETTINGS_HPP

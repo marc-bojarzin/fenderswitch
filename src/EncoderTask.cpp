@@ -299,14 +299,15 @@ void EncoderTask::confirmMenu()
             enterMenu(State::menu, TOP_MIDI);
             break;
         }
-        settings_.store_midi(menu_entry_);
+        Serial.print(settings_.store_midi(menu_entry_) ? F("midi: saved ")
+                                                       : F("midi: unchanged "));
         if (menu_entry_ == MIDI_OMNI_SETTING)
         {
-            Serial.println(F("midi: saved omni"));
+            Serial.println(F("omni"));
         }
         else
         {
-            Serial.print(F("midi: saved channel="));
+            Serial.print(F("channel="));
             Serial.println(menu_entry_);
         }
         closeMenu();
@@ -318,8 +319,9 @@ void EncoderTask::confirmMenu()
             enterMenu(State::menu, TOP_DISPLAY);
             break;
         }
-        settings_.store_brightness(menu_entry_);
-        Serial.print(F("display: saved brightness="));
+        Serial.print(settings_.store_brightness(menu_entry_)
+                         ? F("display: saved brightness=")
+                         : F("display: unchanged brightness="));
         Serial.println(menu_entry_ + 1);
         closeMenu();
         break;
