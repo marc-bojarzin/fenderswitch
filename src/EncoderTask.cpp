@@ -10,6 +10,9 @@ static const uint8_t channel_symbols[AMP_CHANNEL_COUNT] = {
     SEG_D | SEG_G | SEG_A,
 };
 
+// Brightness of the dimmed display after IDLE_DIM_MS.
+#define IDLE_BRIGHTNESS 0
+
 // Top menu entries.
 #define TOP_MIDI     0
 #define TOP_DISPLAY  1
@@ -43,6 +46,11 @@ void EncoderTask::run()
     // Read every input on every pass, whatever the state, so no press is
     // left over for a later state.
     const Input in{encoder_.moved(), encoder_.enter_pressed(), store_.pressed()};
+    if (in.step != 0 || in.enter || in.store)
+    {
+        wake();
+    }
+    runTimers();
     switch (state_)
     {
     case State::live:
@@ -62,6 +70,46 @@ void EncoderTask::run()
 // In every state a button press wins over steps in the same pass: a press is
 // rare and deliberate, while a step taken together with it is mostly a jolt
 // of the knob.
+
+void EncoderTask::wake()
+{
+    active_at_ = millis();
+    done_ = false;
+    if (dimmed_)
+    {
+        dimmed_ = false;
+        display_.setBrightness(settings_.brightness());
+        Serial.println(F("display: awake"));
+    }
+}
+
+void EncoderTask::runTimers()
+{
+    uint32_t now = millis();
+    bool changed = false;
+    if (done_ && now - done_at_ >= STORE_DONE_MS)
+    {
+        done_ = false;
+        changed = true;
+    }
+    if (midi_colon_ && now - midi_colon_at_ >= MIDI_COLON_MS)
+    {
+        midi_colon_ = false;
+        changed = true;
+    }
+    if (changed)
+    {
+        show();
+    }
+    // Only in live: the menu and browsing are input anyway.
+    if (IDLE_DIM_MS > 0 && !dimmed_ && state_ == State::live &&
+        now - active_at_ >= IDLE_DIM_MS)
+    {
+        dimmed_ = true;
+        display_.setBrightness(IDLE_BRIGHTNESS);
+        Serial.println(F("display: dimmed"));
+    }
+}
 
 void EncoderTask::runLive(const Input& in)
 {
@@ -130,12 +178,15 @@ void EncoderTask::browse(int step)
 
 void EncoderTask::select(uint8_t number)
 {
+    midi_colon_ = true;
+    midi_colon_at_ = millis();
     presets_.select(number);
     apply();
 }
 
 void EncoderTask::apply()
 {
+    wake();
     if (state_ == State::browsing)
     {
         state_ = State::live;
@@ -153,6 +204,7 @@ void EncoderTask::apply()
 
 void EncoderTask::store()
 {
+    wake();
     if (!presets_.dirty())
     {
         // Nothing to store: a short wink shows the press was registered.
@@ -167,6 +219,9 @@ void EncoderTask::store()
     Serial.println(channel_names[channel_index(presets_.working().channel())]);
     // Clean again: the channel LED stops swelling.
     showChannel();
+    done_ = true;
+    done_at_ = millis();
+    show();
 }
 
 void EncoderTask::showChannel()
@@ -365,10 +420,15 @@ void EncoderTask::show()
 {
     if (state_ == State::live || state_ == State::browsing)
     {
+        if (done_)
+        {
+            display_.showText("donE");
+            return;
+        }
         // Programs go up to 128, so the leftmost digit is free for the
         // channel symbol.
         uint8_t symbol = channel_symbols[channel_index(presets_.working().channel())];
-        display_.showNumber(presets_.number() + 1, false, symbol);
+        display_.showNumber(presets_.number() + 1, midi_colon_, symbol);
         return;
     }
     char text[SEGMENT_DIGITS + 1];

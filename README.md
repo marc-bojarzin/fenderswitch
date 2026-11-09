@@ -295,7 +295,9 @@ python docs/schematics.py
 
 ### Selecting a program
 
-Send a MIDI Program Change, or browse the presets with the rotary encoder: turn right for the next program, left for the previous one. Browsing wraps around, so turning right from program 128 gets you to program 1 and vice versa. The device loads the preset for that program and switches the amp to the stored channel. The display shows the current program (1–128) on the right three digits, and the preset's channel as a staircase of bars in the leftmost digit: one bar (`_`) for Clean, two (`=`) for Drive, three (`≡`) for More Drive. More bars, more gain. While you turn the encoder only the display follows; the amp switches once the encoder has rested for 150 ms (`BROWSE_SETTLE_MS`), so it doesn't jump through every channel on the way. A MIDI Program Change switches the amp right away.
+Send a MIDI Program Change, or browse the presets with the rotary encoder: turn right for the next program, left for the previous one. Browsing wraps around, so turning right from program 128 gets you to program 1 and vice versa. The device loads the preset for that program and switches the amp to the stored channel. The display shows the current program (1–128) on the right three digits, and the preset's channel as a staircase of bars in the leftmost digit: one bar (`_`) for Clean, two (`=`) for Drive, three (`≡`) for More Drive. More bars, more gain. While you turn the encoder only the display follows; the amp switches once the encoder has rested for 150 ms (`BROWSE_SETTLE_MS`), so it doesn't jump through every channel on the way. A MIDI Program Change switches the amp right away, and the colon flashes briefly (`MIDI_COLON_MS`, 60 ms) for every Program Change the device accepts: a quick check that the footboard gets through.
+
+After 5 minutes without input (`IDLE_DIM_MS`, 0 turns it off), the display dims to its lowest brightness, so it doesn't glare on a dark stage. The next input, including MIDI, brings the stored brightness back.
 
 ### MIDI
 
@@ -359,7 +361,7 @@ All 128 presets are initialized to **Clean** in the EEPROM. This is the **factor
 1. Press one of the three channel buttons, for example **Drive**. The amp switches to that channel right away.
 2. If the new channel differs from the one stored in the preset, its LED **swells** (fades up and down). This means the preset is **dirty**: the current state is modified but not saved.
 3. Press the button of the stored channel to go back to it. The preset is clean again and the LED lights steadily.
-4. To keep the change instead, **hold the same channel button for 2 seconds**, or **press Store** once. The new channel is written to the preset in EEPROM and the LED stops swelling. If the preset has no unsaved change, there is nothing to store: the LED goes dark for a moment to show that the press was registered.
+4. To keep the change instead, **hold the same channel button for 2 seconds**, or **press Store** once. The new channel is written to the preset in EEPROM, the LED stops swelling, and the display shows `donE` for a moment (`STORE_DONE_MS`, 600 ms). If the preset has no unsaved change, there is nothing to store: the LED goes dark for a moment to show that the press was registered.
 
 A program change while the preset is dirty, whether by MIDI Program Change or with the encoder, drops the modified state without saving it. The preset keeps its stored channel.
 
