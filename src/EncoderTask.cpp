@@ -25,7 +25,7 @@ static const uint8_t channel_symbols[AMP_CHANNEL_COUNT] = {
 #define DISPLAY_ENTRIES 9
 
 EncoderTask::EncoderTask(RotaryEncoder& encoder, Button& store,
-                         PresetLoader& presets, OpticalRelay& relay,
+                         PresetLoader& presets, Relay& relay,
                          SegmentDisplay& display, Settings& settings,
                          Led& led_green,
                          Led& led_yellow, Led& led_red)

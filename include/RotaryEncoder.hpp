@@ -27,7 +27,7 @@
 // is wired; swap CLK and DTA to reverse it.
 //
 // The push button (SW) is the "Enter" button: a Button (active low on the
-// internal pull-up, polled, debounced), read through enter_pressed().
+// external and internal pull-ups, polled, debounced), read through enter_pressed().
 class RotaryEncoder
 {
     // CLK (clock) pin A.
@@ -56,8 +56,8 @@ public:
     RotaryEncoder(uint8_t clk_pin, uint8_t dta_pin, uint8_t sw_pin);
 
     // Sets CLK and DTA to INPUT_PULLUP, since a bare encoder only shorts them
-    // to GND (C). SW gets the internal pull-up through Button. External
-    // pull-ups (e.g. on a KY-040 module) work as well.
+    // to GND (C). SW gets the internal pull-up through Button. The external
+    // 10k pull-ups on A, B and SW (or a KY-040 module's) sit in parallel.
     // Reads the current CLK and DTA levels as the starting point. Doesn't
     // set up the interrupt; the sketch must do that, after this call.
     void begin();

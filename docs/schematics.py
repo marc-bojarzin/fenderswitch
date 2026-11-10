@@ -12,7 +12,7 @@ schemdraw.use('svg')
 
 
 def footswitch_line():
-    """Tip/sleeve side: steering diodes, photorelay outputs and TVS."""
+    """Tip/sleeve side: steering diodes, NC relay contacts and TVS."""
     with schemdraw.Drawing(file=OUT / 'footswitch_line.svg', show=False) as d:
         d.config(unit=2.5, bgcolor='white')
         elm.Dot(open=True).label('TIP', 'left')
@@ -21,7 +21,7 @@ def footswitch_line():
         d.push()
         # Positive half-cycle -> relay 1 (channel).
         elm.Diode().right().label('D1\n1N4148')
-        elm.Switch(action='close').right().label('Relay 1\n(channel)')
+        elm.Switch(nc=True).right().label('K1 NC\n(channel)')
         elm.Line().right(1)
         elm.Dot()
         d.push()
@@ -35,7 +35,7 @@ def footswitch_line():
         d.push()
         # Negative half-cycle -> relay 2 (gain).
         elm.Diode().right().reverse().label('D2\n1N4148', 'bottom')
-        elm.Switch(action='close').right().label('Relay 2\n(gain)', 'bottom')
+        elm.Switch(nc=True).right().label('K2 NC\n(gain)', 'bottom')
         elm.Line().right(1)
         elm.Dot()
         d.pop()
@@ -45,13 +45,51 @@ def footswitch_line():
 
 
 def relay_driver():
-    """A TLP222A input LED driven straight from the GPIO through R_F."""
-    with schemdraw.Drawing(file=OUT / 'relay_driver.svg', show=False) as d:
+    """A relay coil switched low-side by a BC548C, with flyback diode."""
+    with schemdraw.Drawing(file=OUT / 'relay_driver.svg', show=False,
+                           margin=1) as d:
         d.config(unit=2.5, bgcolor='white')
         elm.Dot(open=True).label('GPIO\n(D7 / D8)', 'left')
-        elm.Resistor().right().label('R_F\n390Ω')
-        elm.Line().right(0.5)
-        elm.LED().down().label('TLP222A\nLED', 'bottom')
+        elm.Resistor().right().label('R_B\n1k')
+        base = elm.Dot()
+        q = elm.BjtNpn(circle=True).anchor('base').label('Q\nBC548C', 'right')
+        # Base pull-down: keeps the coil off while the pin is Hi-Z.
+        elm.Resistor().at(base.center).down().label('R_PD\n10k', 'top')
+        elm.Ground()
+        elm.Ground().at(q.emitter)
+        # Collector -> coil -> +5V, flyback diode across the coil.
+        elm.Line().at(q.collector).up(0.5)
+        bot = elm.Dot()
+        elm.Inductor2(loops=3).up().label('K1 / K2\ncoil', 'top')
+        top = elm.Dot()
+        elm.Line().up(0.5)
+        elm.Vdd().label('+5V')
+        elm.Line().at(bot.center).right(1.5)
+        elm.Diode().up().toy(top.center).reverse().label('D_F\n1N4148',
+                                                          'bottom')
+        elm.Line().left().tox(top.center)
+
+
+def power_supply():
+    """9 V DC jack, reverse-polarity diode, 5 V switching regulator."""
+    with schemdraw.Drawing(file=OUT / 'power_supply.svg', show=False,
+                           margin=1) as d:
+        d.config(unit=2.5, bgcolor='white')
+        elm.Dot(open=True).label('+9 V DC\n(2.1 mm jack,\ncenter negative)', 'left')
+        elm.Diode().right().label('D_R\n1N5817')
+        vin = elm.Dot()
+        elm.Line().right(1)
+        reg = elm.VoltageRegulator().right().anchor('in').label(
+            'U_REG\nR-78E5.0-1.0', 'top', ofst=0.6)
+        elm.Line().at(reg.out).right(1)
+        vout = elm.Dot()
+        elm.Line().right(1.5)
+        elm.Dot(open=True).label('+5V\n(Nano 5V pin,\nnot VIN)', 'right')
+        elm.Capacitor().at(vin.center).down().label('C_IN\n10µ', 'bottom')
+        gnd_l = elm.Ground()
+        elm.Capacitor().at(vout.center).down().label('C_OUT\n22µ', 'bottom')
+        elm.Ground()
+        elm.Line().at(reg.gnd).down().toy(gnd_l.start)
         elm.Ground()
 
 
@@ -108,7 +146,7 @@ def midi_in():
 def encoder():
     """Bare 5-pin rotary encoder with push button (EC11 style) to the Nano.
 
-    No pull-ups on the encoder: A, B and SW use the Nano's internal ones.
+    10k pull-ups to +5V on A, B and SW.
     """
     with schemdraw.Drawing(file=OUT / 'encoder.svg', show=False,
                            margin=1) as d:
@@ -139,8 +177,8 @@ def encoder():
             if note:
                 wire.label(note, 'top', fontsize=10, ofst=(1.5, 0.1))
 
-        # 10k pull-ups to +5V on A and B, tops level. B's lead crosses the A
-        # wire without connecting.
+        # 10k pull-ups to +5V on A, B and SW, tops level. The B and SW leads
+        # cross the wires above them without connecting.
         x_a, y_a = enc.e0[0] + 1.5, enc.e0[1]
         x_b, y_b = enc.e0[0] + 3, enc.e1[1]
         elm.Dot().at((x_a, y_a))
@@ -149,6 +187,11 @@ def encoder():
         elm.Vdd().label('+5V')
         elm.Dot().at((x_b, y_b))
         elm.Line().up(y_a - y_b + 0.6)
+        elm.Resistor().up(2).label('10k', 'bottom')
+        elm.Vdd().label('+5V')
+        x_sw, y_sw = enc.e0[0] + 4.5, enc.e2[1]
+        elm.Dot().at((x_sw, y_sw))
+        elm.Line().up(y_a - y_sw + 0.6)
         elm.Resistor().up(2).label('10k', 'bottom')
         elm.Vdd().label('+5V')
         # Second SW pin joins the GND wire.
@@ -160,5 +203,6 @@ def encoder():
 if __name__ == '__main__':
     footswitch_line()
     relay_driver()
+    power_supply()
     midi_in()
     encoder()

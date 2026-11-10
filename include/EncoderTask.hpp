@@ -8,7 +8,7 @@
 #include "Led.hpp"
 #include "RotaryEncoder.hpp"
 #include "SegmentDisplay.hpp"
-#include "OpticalRelay.hpp"
+#include "Relay.hpp"
 #include "PresetLoader.hpp"
 #include "Settings.hpp"
 
@@ -119,7 +119,7 @@ class EncoderTask : public Task
     RotaryEncoder& encoder_;
     Button& store_;
     PresetLoader& presets_;
-    OpticalRelay& relay_;
+    Relay& relay_;
     SegmentDisplay& display_;
     Settings& settings_;
 
@@ -154,7 +154,7 @@ public:
 
     // Constructor.
     EncoderTask(RotaryEncoder& encoder, Button& store, PresetLoader& presets,
-                OpticalRelay& relay, SegmentDisplay& display,
+                Relay& relay, SegmentDisplay& display,
                 Settings& settings, Led& led_green, Led& led_yellow, Led& led_red);
 
     // Polls the encoder, its button and the Store button; called by

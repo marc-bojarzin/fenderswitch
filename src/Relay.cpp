@@ -1,23 +1,23 @@
-#include "OpticalRelay.hpp"
+#include "Relay.hpp"
 
-OpticalRelay::OpticalRelay(byte ch_pin, byte gain_pin)
+Relay::Relay(byte ch_pin, byte gain_pin)
     : ch_pin_{ch_pin}
     , gain_pin_{gain_pin}
     , second_pin_{ch_pin}
 {
-    // HIGH first: the pins switch from Hi-Z straight to driving HIGH, without
-    // a LOW glitch. (While still inputs, this briefly enables the internal
-    // pull-ups, which already pass a little current into the relay LEDs.)
-    digitalWrite(ch_pin_, HIGH);
-    digitalWrite(gain_pin_, HIGH);
+    // LOW (coils off, contacts closed: Clean), the same state the base
+    // pull-downs hold during reset, so the pins take over without a glitch.
+    digitalWrite(ch_pin_, LOW);
+    digitalWrite(gain_pin_, LOW);
     pinMode(ch_pin_, OUTPUT);
     pinMode(gain_pin_, OUTPUT);
 }
 
-void OpticalRelay::select(AmpChannel channel)
+void Relay::select(AmpChannel channel)
 {
-    byte ch_level = channel == AmpChannel::clean ? HIGH : LOW;
-    byte gain_level = channel == AmpChannel::more_drive ? LOW : HIGH;
+    // NC contacts: HIGH energizes the coil and opens the contact.
+    byte ch_level = channel == AmpChannel::clean ? LOW : HIGH;
+    byte gain_level = channel == AmpChannel::more_drive ? HIGH : LOW;
 
     // Entering Clean: channel relay first. Otherwise: gain relay first.
     byte first_pin = channel == AmpChannel::clean ? ch_pin_ : gain_pin_;
@@ -40,17 +40,17 @@ void OpticalRelay::select(AmpChannel channel)
     }
 }
 
-AmpChannel OpticalRelay::channel() const
+AmpChannel Relay::channel() const
 {
     return target_;
 }
 
-bool OpticalRelay::busy() const
+bool Relay::busy() const
 {
     return pending_;
 }
 
-void OpticalRelay::run()
+void Relay::run()
 {
     if (!pending_)
     {

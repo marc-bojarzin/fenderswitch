@@ -6,7 +6,7 @@ Code: [include/RotaryEncoder.hpp](../include/RotaryEncoder.hpp), [src/RotaryEnco
 
 ## Hardware
 
-The encoder is a bare 5-pin part (EC11 style). Its contacts only short the signal pins to GND, so they need pull-ups: 10 kΩ to 5V on A and B on the board, and the internal pull-up (`INPUT_PULLUP`) on SW. The firmware turns on the internal pull-ups on A and B too, so the encoder still works without the external resistors (see the [README](../README.md#rotary-encoder)):
+The encoder is a bare 5-pin part (EC11 style). Its contacts only short the signal pins to GND, so they need pull-ups: 10 kΩ to 5V on A, B and SW on the board. The firmware turns on the internal pull-ups (`INPUT_PULLUP`) on all three too, so the encoder still works without the external resistors (see the [README](../README.md#rotary-encoder)):
 
 | Pin | Nano | Function |
 |-----|------|----------|
