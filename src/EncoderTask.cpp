@@ -222,7 +222,7 @@ void EncoderTask::store()
     Serial.print(presets_.number() + 1);
     Serial.print(F(" channel="));
     Serial.println(channel_names[channel_index(presets_.working().channel())]);
-    // Clean again: the channel LED stops blinking.
+    // Clean again: the channel LED stops swelling.
     showChannel();
     done_ = true;
     done_at_ = millis();
@@ -238,7 +238,7 @@ void EncoderTask::showChannel()
         led_drive_.off();
         if (dirty)
         {
-            led_clean_.blink_slow();
+            led_clean_.swell();
         }
         else
         {
@@ -247,7 +247,7 @@ void EncoderTask::showChannel()
         return;
     }
     led_clean_.off();
-    // Between Drive and More Drive only the color changes; blinking keeps
+    // Between Drive and More Drive only the color changes; swelling keeps
     // going.
     if (active == AmpChannel::more_drive)
     {
@@ -259,7 +259,7 @@ void EncoderTask::showChannel()
     }
     if (dirty)
     {
-        led_drive_.blink_slow();
+        led_drive_.swell();
     }
     else
     {

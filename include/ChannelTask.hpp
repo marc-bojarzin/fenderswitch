@@ -15,7 +15,7 @@
 //
 // A press sets the working buffer to that channel and switches the amp right
 // away, without the browse delay. If the channel differs from the stored
-// preset, the preset is dirty and the channel LED blinks; going back to the
+// preset, the preset is dirty and the channel LED swells; going back to the
 // stored channel makes it clean again. Only the Store button stores.
 //
 // The display (LEDs, 7-segment display, Serial) goes through EncoderTask, so

@@ -192,7 +192,7 @@ During reset both LEDs are off, which matches the relays at rest (Clean). One th
 | A3 | Store button | To GND, `INPUT_PULLUP` |
 | 5V / GND | Display VCC, encoder pull-ups, and GND for all modules (including encoder C and SW), relay coils and driver emitters | |
 
-Both dies of the duo LED must be on PWM pins, because the firmware mixes the yellow with `analogWrite()`. The Clean LED only switches; it sits on D11, a PWM pin, all the same. OUT_CH and OUT_GAIN only switch, so they use the non-PWM pins D7 and D8. Don't use D13 for OUT_CH or OUT_GAIN: the bootloader blinks the on-board LED on it, which would switch the relay.
+Both dies of the duo LED must be on PWM pins, because the firmware mixes the yellow and swells a dirty preset with `analogWrite()`. The Clean LED swells too, so it sits on D11, also a PWM pin. OUT_CH and OUT_GAIN only switch, so they use the non-PWM pins D7 and D8. Don't use D13 for OUT_CH or OUT_GAIN: the bootloader blinks the on-board LED on it, which would switch the relay.
 
 ### Checking the relay stages
 
@@ -278,9 +278,9 @@ flowchart TD
     Apply --> UI["update LEDs and display"]
 
     Btn["channel button pressed<br>(debounced): Clean, or Drive<br>(Drive / More Drive toggle)"] --> Diff{"differs from<br>stored preset?"}
-    Diff -- "yes: dirty" --> Blink["blink channel LED"]
+    Diff -- "yes: dirty" --> Swell["swell channel LED"]
     Diff -- "no: clean" --> Steady["channel LED steady"]
-    Blink --> Mode
+    Swell --> Mode
     Steady --> Mode
     Hold["Store pressed,<br>while dirty"] --> Store["store channel in preset<br>(EEPROM)"]
     Store --> Steady
@@ -390,9 +390,9 @@ Don't send from both at the same time: the two streams would mix on the shared l
 All 128 presets are initialized to **Clean** in the EEPROM. This is the **factory preset**.
 
 1. Press one of the two channel buttons, for example **Drive**. The amp switches to that channel right away. Press **Drive** again to toggle between More Drive and Drive.
-2. If the new channel differs from the one stored in the preset, its LED **blinks** (twice a second). This means the preset is **dirty**: the current state is modified but not saved.
+2. If the new channel differs from the one stored in the preset, its LED **swells** (fades up and down, about every 2 s). This means the preset is **dirty**: the current state is modified but not saved.
 3. Go back to the stored channel to undo the change. The preset is clean again and the LED lights steadily.
-4. To keep the change instead, **press Store**. This is the only way to store a preset. The new channel is written to the preset in EEPROM, the LED stops blinking, and the display shows `donE` for a moment (`STORE_DONE_MS`, 600 ms). If the preset has no unsaved change, there is nothing to store: the LED goes dark for a moment to show that the press was registered.
+4. To keep the change instead, **press Store**. This is the only way to store a preset. The new channel is written to the preset in EEPROM, the LED stops swelling, and the display shows `donE` for a moment (`STORE_DONE_MS`, 600 ms). If the preset has no unsaved change, there is nothing to store: the LED goes dark for a moment to show that the press was registered.
 
 A program change while the preset is dirty, whether by MIDI Program Change or with the encoder, drops the modified state without saving it. The preset keeps its stored channel.
 
@@ -434,7 +434,7 @@ Picking a value in a submenu writes it to EEPROM, takes effect right away and le
 | [include/Relay.hpp](include/Relay.hpp) | Drives the two relays (NC contacts), switching make-before-break |
 | [include/Led.hpp](include/Led.hpp) | On/off LED with adjustable brightness (PWM), slow/fast blinking, swelling (PWM), a one-shot flash and a short wink (off, then on again) |
 | [include/DuoLed.hpp](include/DuoLed.hpp) | Red/green duo LED made of two Leds, one per die: the Led modes on both, colors red, green and yellow mixed by their brightness (PWM) |
-| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" opens the settings menu (MIDI channel, display brightness; Enter or Store confirms), Store saves a dirty preset. Also shows the working buffer: steady LED, or blinking while dirty |
+| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" opens the settings menu (MIDI channel, display brightness; Enter or Store confirms), Store saves a dirty preset. Also shows the working buffer: steady LED, or swelling while dirty |
 | [include/Settings.hpp](include/Settings.hpp) | The menu settings: MIDI (OMNI or channel 1–16) and display brightness, in EEPROM bytes 128 and 129 |
 | [include/MidiTask.hpp](include/MidiTask.hpp) | MIDI IN: reads the UART, filters by the MIDI channel or OMNI from Settings, and recalls the preset of each Program Change right away |
 | [include/MidiParser.hpp](include/MidiParser.hpp) | Byte-by-byte MIDI parser: running status, real-time bytes in the middle of messages, SysEx and stray data bytes |

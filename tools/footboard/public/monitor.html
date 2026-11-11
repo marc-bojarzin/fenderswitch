@@ -32,8 +32,8 @@
   .led.on.clean i { background: var(--clean); box-shadow: 0 0 10px var(--clean); }
   .led.on.drive i { background: var(--drive); box-shadow: 0 0 10px var(--drive); }
   .led.on.drive.more i { background: var(--more); box-shadow: 0 0 10px var(--more); }
-  .led.on.modified i { animation: blink 0.5s step-end infinite; }
-  @keyframes blink { 50% { background: var(--off); box-shadow: none; } }
+  .led.on.modified i { animation: swell 1.9s ease-in-out infinite; }
+  @keyframes swell { 50% { opacity: 0.25; box-shadow: none; } }
 
   .log-head { display: flex; justify-content: space-between; align-items: baseline; }
   .log-head h2 { font-size: 0.85rem; margin: 0; color: var(--muted); font-weight: 600; }

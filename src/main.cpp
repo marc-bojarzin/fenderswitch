@@ -28,7 +28,7 @@
 //    stores a dirty preset, or confirms the menu entry.
 //  - ChannelTask reads the Clean and Drive buttons (A0, A1, to GND): Clean
 //    selects Clean, Drive selects Drive and then toggles between More Drive
-//    and Drive. The LED blinks while the preset differs from the stored one;
+//    and Drive. The LED swells while the preset differs from the stored one;
 //    only the Store button stores it.
 //  - MidiTask reads MIDI IN on the UART (D0/RX, from the DIN socket or from
 //    a serial-MIDI bridge over USB): a Program Change recalls its preset.

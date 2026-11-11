@@ -68,7 +68,7 @@
 // mode; it is the only way to store a preset.
 //
 // It also owns the display of the working buffer, used by ChannelTask too: the
-// LED of the active channel is steady while the preset is clean and blinks
+// LED of the active channel is steady while the preset is clean and swells
 // while it is dirty. Clean has a green LED, Drive and More Drive share a
 // red/green duo LED: yellow (both dies) for Drive, red for More Drive.
 //
@@ -188,7 +188,7 @@ private:
     void browse(int step);
 
     // Lights the LED of the working buffer's channel only, in its color:
-    // steady while clean, blinking while dirty.
+    // steady while clean, swelling while dirty.
     void showChannel();
 
     // Opens the top menu. -> menu.
