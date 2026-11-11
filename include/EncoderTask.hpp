@@ -35,12 +35,6 @@
 #define MIDI_COLON_MS 60
 #endif
 
-// After this long without input (encoder, buttons, MIDI), the display dims to
-// its lowest brightness until the next input, in ms. 0 = never dim.
-#ifndef IDLE_DIM_MS
-#define IDLE_DIM_MS 300000UL
-#endif
-
 // Browses the presets with the rotary encoder.
 //
 // Every step selects the next (+1) or previous (-1) program, wrapping around
@@ -57,6 +51,8 @@
 //   dISP   display brightness submenu, opens on the current level:
 //          br:01 (dimmest) ... br:08 (brightest), ESC. The display takes
 //          each level right away as a preview; ESC goes back to the stored one.
+//   IdLE   idle dimming submenu, opens on the current setting: OFF,
+//           1:00 ... 10:00 (minutes:seconds, like a clock), ESC
 //   ESC    leave the menu
 //
 // Picking a value in a submenu writes it to EEPROM and leaves the menu; ESC in
@@ -75,8 +71,8 @@
 // On top of the program number, the display shows for a moment:
 //   - "donE" for STORE_DONE_MS after a preset was stored,
 //   - the colon for MIDI_COLON_MS when a MIDI Program Change arrives,
-// and after IDLE_DIM_MS without input it dims to its lowest brightness; the
-// next input brings the stored brightness back.
+// and after the idle time set in the menu without input it dims to its lowest
+// brightness; the next input brings the stored brightness back.
 //
 // A state machine:
 //
@@ -85,7 +81,7 @@
 //   browsing  the display follows the encoder, the amp waits. Enter or Store
 //             apply right away, then act as in live; turn -> stay (restarts
 //             the wait); rest for BROWSE_SETTLE_MS -> apply, live.
-//   menu, menu_midi, menu_display
+//   menu, menu_midi, menu_display, menu_idle
 //             the top menu and its submenus. Turn -> next/previous entry;
 //             Enter or Store -> pick it (open a submenu, save and -> live,
 //             or ESC: up one level).
@@ -108,6 +104,7 @@ class EncoderTask : public Task
         menu,           // top menu
         menu_midi,      // MIDI submenu
         menu_display,   // display brightness submenu
+        menu_idle,      // idle dimming submenu
     };
 
     // Input of one pass, read once and handed to the state's handler.
@@ -194,8 +191,7 @@ private:
     // Opens the top menu. -> menu.
     void openMenu();
 
-    // Switches to menu state (menu, menu_midi or menu_display) on entry and
-    // shows it.
+    // Switches to a menu state (menu or a submenu) on entry and shows it.
     void enterMenu(State state, uint8_t entry);
 
     // Picks the entry shown in the current menu: opens a submenu, saves a
@@ -212,8 +208,8 @@ private:
     bool atEsc() const;
 
     // Writes the text of the menu entry shown to text (4 characters at
-    // most), e.g. "CH05"; returns true if the colon belongs between the
-    // second and third character ("CH:05").
+    // most), e.g. "CH05" or " 500"; returns true if the colon belongs between
+    // the second and third character ("CH:05", " 5:00").
     bool menuText(char text[SEGMENT_DIGITS + 1]) const;
 
     // Writes the menu entry to Serial, e.g. "menu: CH:05".
@@ -223,9 +219,13 @@ private:
     // "donE".
     void wake();
 
-    // Dims the display once it has been idle for IDLE_DIM_MS, and ends the
+    // Dims the display once it has been idle for the time in Settings, and
+    // ends the
     // "donE" and colon overlays when their time is up.
     void runTimers();
+
+    // Writes the idle setting to Serial, "off" or e.g. "minutes=5".
+    static void printIdle(uint8_t minutes);
 
     // Sets the display brightness (0-7) and reports it on Serial, e.g.
     // "display: brightness=5" (1-8, as in the menu).

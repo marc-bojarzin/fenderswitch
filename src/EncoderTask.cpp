@@ -10,19 +10,24 @@ static const uint8_t channel_symbols[AMP_CHANNEL_COUNT] = {
     SEG_D | SEG_G | SEG_A,
 };
 
-// Brightness of the dimmed display after IDLE_DIM_MS.
+// Brightness of the dimmed display after the idle time.
 #define IDLE_BRIGHTNESS 0
 
 // Top menu entries.
 #define TOP_MIDI     0
 #define TOP_DISPLAY  1
-#define TOP_ENTRIES  3  // ESC included
+#define TOP_IDLE     2
+#define TOP_ENTRIES  4  // ESC included
 
 // MIDI submenu: MIDI_OMNI_SETTING (ALL), the channels 1-16, then ESC.
 #define MIDI_ENTRIES 18
 
 // Display submenu: brightness 0-7 (shown as br:01-br:08), then ESC.
 #define DISPLAY_ENTRIES 9
+
+// Idle submenu: OFF (0), 1-IDLE_DIM_MAX_MIN minutes (shown as 1:00-10:00),
+// then ESC.
+#define IDLE_ENTRIES (IDLE_DIM_MAX_MIN + 2)
 
 EncoderTask::EncoderTask(RotaryEncoder& encoder, Button& store,
                          PresetLoader& presets, Relay& relay,
@@ -60,6 +65,7 @@ void EncoderTask::run()
     case State::menu:
     case State::menu_midi:
     case State::menu_display:
+    case State::menu_idle:
         runMenu(in);
         break;
     }
@@ -100,8 +106,9 @@ void EncoderTask::runTimers()
         show();
     }
     // Only in live: the menu and browsing are input anyway.
-    if (IDLE_DIM_MS > 0 && !dimmed_ && state_ == State::live &&
-        now - active_at_ >= IDLE_DIM_MS)
+    uint8_t idle = settings_.idle();
+    if (idle > 0 && !dimmed_ && state_ == State::live &&
+        now - active_at_ >= idle * 60000UL)
     {
         dimmed_ = true;
         display_.setBrightness(IDLE_BRIGHTNESS);
@@ -294,6 +301,10 @@ void EncoderTask::confirmMenu()
         {
             enterMenu(State::menu_display, settings_.brightness());
         }
+        else if (menu_entry_ == TOP_IDLE)
+        {
+            enterMenu(State::menu_idle, settings_.idle());
+        }
         else
         {
             closeMenu();
@@ -331,6 +342,17 @@ void EncoderTask::confirmMenu()
         Serial.println(menu_entry_ + 1);
         closeMenu();
         break;
+    case State::menu_idle:
+        if (atEsc())
+        {
+            enterMenu(State::menu, TOP_IDLE);
+            break;
+        }
+        Serial.print(settings_.store_idle(menu_entry_) ? F("idle: saved ")
+                                                       : F("idle: unchanged "));
+        printIdle(menu_entry_);
+        closeMenu();
+        break;
     default:
         break;
     }
@@ -351,6 +373,8 @@ uint8_t EncoderTask::menuSize() const
         return MIDI_ENTRIES;
     case State::menu_display:
         return DISPLAY_ENTRIES;
+    case State::menu_idle:
+        return IDLE_ENTRIES;
     default:
         return TOP_ENTRIES;
     }
@@ -372,7 +396,23 @@ bool EncoderTask::menuText(char text[SEGMENT_DIGITS + 1]) const
     }
     else if (state_ == State::menu)
     {
-        strcpy_P(text, menu_entry_ == TOP_MIDI ? PSTR("Chan") : PSTR("dISP"));
+        strcpy_P(text, menu_entry_ == TOP_MIDI      ? PSTR("Chan")
+                       : menu_entry_ == TOP_DISPLAY ? PSTR("dISP")
+                                                    : PSTR("IdLE"));
+    }
+    else if (state_ == State::menu_idle && menu_entry_ == 0)
+    {
+        strcpy_P(text, PSTR("OFF"));
+    }
+    else if (state_ == State::menu_idle)
+    {
+        // Minutes:seconds like a clock, " 5:00", as there is no "m".
+        text[0] = menu_entry_ >= 10 ? '0' + menu_entry_ / 10 : ' ';
+        text[1] = '0' + menu_entry_ % 10;
+        text[2] = '0';
+        text[3] = '0';
+        text[4] = '\0';
+        return true;
     }
     else if (state_ == State::menu_midi && menu_entry_ == MIDI_OMNI_SETTING)
     {
@@ -414,6 +454,19 @@ void EncoderTask::printMenuEntry()
     else
     {
         Serial.println(text);
+    }
+}
+
+void EncoderTask::printIdle(uint8_t minutes)
+{
+    if (minutes == 0)
+    {
+        Serial.println(F("off"));
+    }
+    else
+    {
+        Serial.print(F("minutes="));
+        Serial.println(minutes);
     }
 }
 

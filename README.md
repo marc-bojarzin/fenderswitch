@@ -27,13 +27,13 @@ There are two momentary push buttons for the channels. **Clean** selects Clean. 
 
 The microcontroller's EEPROM holds up to **128 presets**, one per MIDI program number. A MIDI IN circuit feeds the microcontroller's UART. When the device receives a **MIDI Program Change**, it loads the preset stored for that program and switches the amp to that channel. This lets you control the amp from an external MIDI pedal or a multi-effects board.
 
-At boot, all presets are loaded from EEPROM into RAM, so switching programs never waits for the EEPROM. Preset *n* is stored in EEPROM byte *n* (bytes 0–127). Byte 128 holds the MIDI setting (0 = OMNI, 1–16 = channel), byte 129 the display brightness (0–7); the bytes above are free.
+At boot, all presets are loaded from EEPROM into RAM, so switching programs never waits for the EEPROM. Preset *n* is stored in EEPROM byte *n* (bytes 0–127). Byte 128 holds the MIDI setting (0 = OMNI, 1–16 = channel), byte 129 the display brightness (0–7), byte 130 the idle dimming time (0 = off, 1–10 minutes); the bytes above are free.
 
 All programs start out as **Clean**, the factory preset. You change a preset with the channel buttons and store it by pressing **Store** (see [Usage](#usage)).
 
 ### Display and controls
 
-An internal 4-digit 7-segment display (TM1637, with a colon) shows the current program number with the channel in front of it, and the settings menu for the MIDI channel (or OMNI mode) and the display brightness. A rotary encoder with a built-in push button lets you move through the menus and browse quickly through the presets. The **Store** button next to it saves a modified preset, and in the menu it confirms a setting and writes it to EEPROM.
+An internal 4-digit 7-segment display (TM1637, with a colon) shows the current program number with the channel in front of it, and the settings menu for the MIDI channel (or OMNI mode), the display brightness and idle dimming. A rotary encoder with a built-in push button lets you move through the menus and browse quickly through the presets. The **Store** button next to it saves a modified preset, and in the menu it confirms a setting and writes it to EEPROM.
 
 ## Features
 
@@ -328,7 +328,7 @@ python docs/schematics.py
 
 Send a MIDI Program Change, or browse the presets with the rotary encoder: turn right for the next program, left for the previous one. Browsing wraps around, so turning right from program 128 gets you to program 1 and vice versa. The device loads the preset for that program and switches the amp to the stored channel. The display shows the current program (1–128) on the right three digits, and the preset's channel as a staircase of bars in the leftmost digit: one bar (`_`) for Clean, two (`=`) for Drive, three (`≡`) for More Drive. More bars, more gain. While you turn the encoder only the display follows; the amp switches once the encoder has rested for 150 ms (`BROWSE_SETTLE_MS`), so it doesn't jump through every channel on the way. A MIDI Program Change switches the amp right away, and the colon flashes briefly (`MIDI_COLON_MS`, 60 ms) for every Program Change the device accepts: a quick check that the footboard gets through.
 
-After 5 minutes without input (`IDLE_DIM_MS`, 0 turns it off), the display dims to its lowest brightness, so it doesn't glare on a dark stage. The next input, including MIDI, brings the stored brightness back.
+After 5 minutes without input (set in the [settings menu](#settings-menu), or turned off there), the display dims to its lowest brightness, so it doesn't glare on a dark stage. The next input, including MIDI, brings the stored brightness back.
 
 ### MIDI
 
@@ -404,6 +404,7 @@ Press the encoder's push button to open the settings menu. Turning the encoder b
 |----------|-------|
 | `Chan` | The MIDI channel submenu, on the current setting |
 | `dISP` | The display brightness submenu, on the current level |
+| `IdLE` | The idle dimming submenu, on the current setting |
 | `ESC` | Leaves the menu |
 
 | MIDI submenu | Meaning |
@@ -417,7 +418,13 @@ Press the encoder's push button to open the settings menu. Turning the encoder b
 | `br:01` … `br:08` | Brightness of the 7-segment display, dimmest to brightest. The display takes each level right away while you turn, so you see what you get |
 | `ESC` | Back to the top menu; the display goes back to the stored brightness |
 
-Picking a value in a submenu writes it to EEPROM, takes effect right away and leaves the menu; the display shows the program number again. While the menu is open, turning the encoder doesn't change the program, but MIDI and the channel buttons keep working. On a fresh EEPROM the brightness starts at `br:05` (`SEGMENT_BRIGHTNESS`, 0–7, in [SegmentDisplay.hpp](include/SegmentDisplay.hpp)).
+| Idle submenu | Meaning |
+|--------------|---------|
+| `OFF` | The display never dims |
+| `1:00` … `10:00` | Dim after this many minutes without input. Shown as minutes:seconds, like a clock, since a 7-segment display can't draw an "m" |
+| `ESC` | Back to the top menu without saving |
+
+Picking a value in a submenu writes it to EEPROM, takes effect right away and leaves the menu; the display shows the program number again. While the menu is open, turning the encoder doesn't change the program, but MIDI and the channel buttons keep working. On a fresh EEPROM the brightness starts at `br:05` (`SEGMENT_BRIGHTNESS`, 0–7, in [SegmentDisplay.hpp](include/SegmentDisplay.hpp)) and idle dimming at `5:00` (`IDLE_DIM_MIN`, 0–10, 0 = off, in [Settings.hpp](include/Settings.hpp)).
 
 ## Code structure
 
@@ -434,8 +441,8 @@ Picking a value in a submenu writes it to EEPROM, takes effect right away and le
 | [include/Relay.hpp](include/Relay.hpp) | Drives the two relays (NC contacts), switching make-before-break |
 | [include/Led.hpp](include/Led.hpp) | On/off LED with adjustable brightness (PWM), slow/fast blinking, swelling (PWM), a one-shot flash and a short wink (off, then on again) |
 | [include/DuoLed.hpp](include/DuoLed.hpp) | Red/green duo LED made of two Leds, one per die: the Led modes on both, colors red, green and yellow mixed by their brightness (PWM) |
-| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" opens the settings menu (MIDI channel, display brightness; Enter or Store confirms), Store saves a dirty preset. Also shows the working buffer: steady LED, or swelling while dirty |
-| [include/Settings.hpp](include/Settings.hpp) | The menu settings: MIDI (OMNI or channel 1–16) and display brightness, in EEPROM bytes 128 and 129 |
+| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" opens the settings menu (MIDI channel, display brightness, idle dimming; Enter or Store confirms), Store saves a dirty preset. Also shows the working buffer: steady LED, or swelling while dirty |
+| [include/Settings.hpp](include/Settings.hpp) | The menu settings: MIDI (OMNI or channel 1–16), display brightness and idle dimming, in EEPROM bytes 128 to 130 |
 | [include/MidiTask.hpp](include/MidiTask.hpp) | MIDI IN: reads the UART, filters by the MIDI channel or OMNI from Settings, and recalls the preset of each Program Change right away |
 | [include/MidiParser.hpp](include/MidiParser.hpp) | Byte-by-byte MIDI parser: running status, real-time bytes in the middle of messages, SysEx and stray data bytes |
 | [include/ChannelTask.hpp](include/ChannelTask.hpp) | The two channel buttons, Clean and Drive (Drive / More Drive toggle): a press switches the amp right away |

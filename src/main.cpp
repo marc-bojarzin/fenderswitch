@@ -24,8 +24,9 @@
 //    the next or previous program and switches the amp to its channel through
 //    the Relay. The program number is shown on a 4-digit TM1637
 //    7-segment display (DIO on A4, CLK on A5). Pressing "enter" opens the
-//    settings menu (MIDI channel, display brightness). The "Store" button (A3, to GND)
-//    stores a dirty preset, or confirms the menu entry.
+//    settings menu (MIDI channel, display brightness, idle dimming). The
+//    "Store" button (A3, to GND) stores a dirty preset, or confirms the menu
+//    entry.
 //  - ChannelTask reads the Clean and Drive buttons (A0, A1, to GND): Clean
 //    selects Clean, Drive selects Drive and then toggles between More Drive
 //    and Drive. The LED swells while the preset differs from the stored one;
@@ -155,6 +156,15 @@ void setup() {
     }
     Serial.print(F("display: brightness="));
     Serial.println(settings.brightness() + 1);
+    if (settings.idle() == 0)
+    {
+        Serial.println(F("idle: off"));
+    }
+    else
+    {
+        Serial.print(F("idle: minutes="));
+        Serial.println(settings.idle());
+    }
     encoderTask.apply();
     enablePinChangeInterrupt(ENC_CLK_PIN);
     enablePinChangeInterrupt(ENC_DT_PIN);

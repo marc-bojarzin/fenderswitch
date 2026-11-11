@@ -13,6 +13,11 @@ void Settings::begin()
     {
         brightness_ = stored;
     }
+    stored = EEPROM.read(SETTINGS_EEPROM_IDLE);
+    if (stored <= IDLE_DIM_MAX_MIN)
+    {
+        idle_ = stored;
+    }
 }
 
 uint8_t Settings::midi() const
@@ -60,4 +65,19 @@ bool Settings::store_brightness(uint8_t brightness)
     }
     brightness_ = brightness;
     return write_if_changed(SETTINGS_EEPROM_BRIGHTNESS, brightness_);
+}
+
+uint8_t Settings::idle() const
+{
+    return idle_;
+}
+
+bool Settings::store_idle(uint8_t minutes)
+{
+    if (minutes > IDLE_DIM_MAX_MIN)
+    {
+        return false;
+    }
+    idle_ = minutes;
+    return write_if_changed(SETTINGS_EEPROM_IDLE, idle_);
 }
