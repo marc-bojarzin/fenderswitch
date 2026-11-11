@@ -36,8 +36,3 @@ bool Button::down() const
 {
     return stable_ == LOW;
 }
-
-uint32_t Button::held_for() const
-{
-    return down() ? millis() - changed_at_ : 0;
-}

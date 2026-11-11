@@ -27,17 +27,15 @@ static const uint8_t channel_symbols[AMP_CHANNEL_COUNT] = {
 EncoderTask::EncoderTask(RotaryEncoder& encoder, Button& store,
                          PresetLoader& presets, Relay& relay,
                          SegmentDisplay& display, Settings& settings,
-                         Led& led_green,
-                         Led& led_yellow, Led& led_red)
+                         Led& led_clean, DuoLed& led_drive)
     : encoder_{encoder}
     , store_{store}
     , presets_{presets}
     , relay_{relay}
     , display_{display}
     , settings_{settings}
-    , led_green_{led_green}
-    , led_yellow_{led_yellow}
-    , led_red_{led_red}
+    , led_clean_{led_clean}
+    , led_drive_{led_drive}
 {
 }
 
@@ -208,7 +206,14 @@ void EncoderTask::store()
     if (!presets_.dirty())
     {
         // Nothing to store: a short wink shows the press was registered.
-        channelLed(presets_.working().channel()).wink(NOTHING_TO_STORE_MS);
+        if (presets_.working().channel() == AmpChannel::clean)
+        {
+            led_clean_.wink(NOTHING_TO_STORE_MS);
+        }
+        else
+        {
+            led_drive_.wink(NOTHING_TO_STORE_MS);
+        }
         Serial.println(F("store: nothing to store"));
         return;
     }
@@ -217,7 +222,7 @@ void EncoderTask::store()
     Serial.print(presets_.number() + 1);
     Serial.print(F(" channel="));
     Serial.println(channel_names[channel_index(presets_.working().channel())]);
-    // Clean again: the channel LED stops swelling.
+    // Clean again: the channel LED stops blinking.
     showChannel();
     done_ = true;
     done_at_ = millis();
@@ -228,36 +233,37 @@ void EncoderTask::showChannel()
 {
     AmpChannel active = presets_.working().channel();
     bool dirty = presets_.dirty();
-    for (uint8_t i = 0; i < AMP_CHANNEL_COUNT; ++i)
+    if (active == AmpChannel::clean)
     {
-        AmpChannel channel = static_cast<AmpChannel>(i);
-        Led& led = channelLed(channel);
-        if (channel != active)
+        led_drive_.off();
+        if (dirty)
         {
-            led.off();
-        }
-        else if (dirty)
-        {
-            led.swell();
+            led_clean_.blink_slow();
         }
         else
         {
-            led.on();
+            led_clean_.on();
         }
+        return;
     }
-}
-
-Led& EncoderTask::channelLed(AmpChannel channel)
-{
-    switch (channel)
+    led_clean_.off();
+    // Between Drive and More Drive only the color changes; blinking keeps
+    // going.
+    if (active == AmpChannel::more_drive)
     {
-    case AmpChannel::drive:
-        return led_yellow_;
-    case AmpChannel::more_drive:
-        return led_red_;
-    case AmpChannel::clean:
-    default:
-        return led_green_;
+        led_drive_.red();
+    }
+    else
+    {
+        led_drive_.yellow();
+    }
+    if (dirty)
+    {
+        led_drive_.blink_slow();
+    }
+    else
+    {
+        led_drive_.on();
     }
 }
 

@@ -10,7 +10,8 @@
   main { max-width: 720px; margin: 0 auto; }
 
   /* Front panel: the 4-digit 7-segment display (TM1637, with colon) and the
-     three channel LEDs. */
+     channel LEDs: Clean, and the duo LED for Drive (yellow) and More Drive
+     (red). */
   .front { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
   .seg {
     background: var(--seg-bg);
@@ -30,9 +31,9 @@
   .led i { width: 14px; height: 14px; border-radius: 50%; background: var(--off); transition: background 0.15s, box-shadow 0.15s; }
   .led.on.clean i { background: var(--clean); box-shadow: 0 0 10px var(--clean); }
   .led.on.drive i { background: var(--drive); box-shadow: 0 0 10px var(--drive); }
-  .led.on.more i { background: var(--more); box-shadow: 0 0 10px var(--more); }
-  .led.on.modified i { animation: swell 1.6s ease-in-out infinite; }
-  @keyframes swell { 50% { opacity: 0.25; box-shadow: none; } }
+  .led.on.drive.more i { background: var(--more); box-shadow: 0 0 10px var(--more); }
+  .led.on.modified i { animation: blink 0.5s step-end infinite; }
+  @keyframes blink { 50% { background: var(--off); box-shadow: none; } }
 
   .log-head { display: flex; justify-content: space-between; align-items: baseline; }
   .log-head h2 { font-size: 0.85rem; margin: 0; color: var(--muted); font-weight: 600; }
@@ -63,8 +64,7 @@
       <div class="seg" id="seg" role="img" aria-live="polite" aria-label="Display: blank"></div>
       <div class="leds">
         <div class="led clean" id="led-clean"><i></i>Clean</div>
-        <div class="led drive" id="led-drive"><i></i>Drive</div>
-        <div class="led more" id="led-more"><i></i>More Drive</div>
+        <div class="led drive" id="led-drive"><i></i>Drive / More</div>
       </div>
     </div>
 
@@ -82,11 +82,8 @@
   const statusEl = document.getElementById('status');
   const statusText = document.getElementById('status-text');
   const logEl = document.getElementById('log');
-  const leds = {
-    'Clean': document.getElementById('led-clean'),
-    'Drive': document.getElementById('led-drive'),
-    'More Drive': document.getElementById('led-more'),
-  };
+  const ledClean = document.getElementById('led-clean');
+  const ledDrive = document.getElementById('led-drive');
 
   function render(device) {
     statusEl.classList.toggle('ok', device.connected);
@@ -97,11 +94,14 @@
     lastProgram = device.program;
     lastChannel = device.ampChannel;
     if (device.program) refreshSeg();
-    for (const [name, led] of Object.entries(leds)) {
-      const on = name === device.ampChannel;
-      led.classList.toggle('on', on);
-      led.classList.toggle('modified', on && device.modified);
-    }
+    // Clean has its own LED; Drive and More Drive share the duo LED.
+    const clean = device.ampChannel === 'Clean';
+    const drive = device.ampChannel === 'Drive' || device.ampChannel === 'More Drive';
+    ledClean.classList.toggle('on', clean);
+    ledClean.classList.toggle('modified', clean && device.modified);
+    ledDrive.classList.toggle('on', drive);
+    ledDrive.classList.toggle('more', device.ampChannel === 'More Drive');
+    ledDrive.classList.toggle('modified', drive && device.modified);
   }
 
   // 4-digit 7-segment display with a colon between digits 2 and 3, like the

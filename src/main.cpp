@@ -2,6 +2,7 @@
 #include "Task.hpp"
 #include "Button.hpp"
 #include "Led.hpp"
+#include "DuoLed.hpp"
 #include "RotaryEncoder.hpp"
 #include "SegmentDisplay.hpp"
 #include "Relay.hpp"
@@ -25,14 +26,16 @@
 //    7-segment display (DIO on A4, CLK on A5). Pressing "enter" opens the
 //    settings menu (MIDI channel, display brightness). The "Store" button (A3, to GND)
 //    stores a dirty preset, or confirms the menu entry.
-//  - ChannelTask reads the Clean, Drive and More Drive buttons (A0-A2, to
-//    GND): a press switches the amp to that channel, the LED swells while the
-//    preset differs from the stored one, holding the button 2 s stores it.
+//  - ChannelTask reads the Clean and Drive buttons (A0, A1, to GND): Clean
+//    selects Clean, Drive selects Drive and then toggles between More Drive
+//    and Drive. The LED blinks while the preset differs from the stored one;
+//    only the Store button stores it.
 //  - MidiTask reads MIDI IN on the UART (D0/RX, from the DIN socket or from
 //    a serial-MIDI bridge over USB): a Program Change recalls its preset.
 //    Listens to the channel in Settings (EEPROM), or to all (OMNI).
-//  - Red, green and yellow on/off LEDs (each via 220-330 ohm resistor to GND)
-//    show the selected channel.
+//  - A green LED (Clean) and a red/green duo LED, common cathode (yellow for
+//    Drive, red for More Drive), each die via a 220-330 ohm resistor, show the
+//    selected channel.
 //  - OUT_CH and OUT_GAIN drive the relay coils through BC548C transistors
 //    (1k to the base, 10k base pull-down), the amp line uses the NC contacts.
 //    On the prototype, plain LEDs (220-330 ohm to GND) take their place:
@@ -44,12 +47,11 @@
 #define ENC_SW_PIN      5  // Rotary encoder SW pin (push button)
 #define OUT_CH_PIN      7  // Relay 1 driver (channel), HIGH = contact open
 #define OUT_GAIN_PIN    8  // Relay 2 driver (gain), HIGH = contact open
-#define RED_LED_PIN     9  // Red LED pin ("More Drive")
-#define YELLOW_LED_PIN 10  // Yellow LED pin ("Drive")
-#define GREEN_LED_PIN  11  // Green LED pin ("Clean")
+#define DUO_RED_PIN     9  // Duo LED, red die ("Drive", "More Drive")
+#define DUO_GREEN_PIN  10  // Duo LED, green die ("Drive")
+#define CLEAN_LED_PIN  11  // Green LED pin ("Clean")
 #define BTN_CLEAN_PIN  A0  // "Clean" button, to GND (INPUT_PULLUP)
 #define BTN_DRIVE_PIN  A1  // "Drive" button, to GND (INPUT_PULLUP)
-#define BTN_MORE_PIN   A2  // "More Drive" button, to GND (INPUT_PULLUP)
 #define BTN_STORE_PIN  A3  // "Store" button next to the encoder, to GND
 #define SEG_DIO_PIN    A4  // 7-segment display DIO (was LCD SDA)
 #define SEG_CLK_PIN    A5  // 7-segment display CLK (was LCD SCL)
@@ -63,10 +65,9 @@
 // the serial monitor has to run at the same rate (monitor_speed).
 #define SERIAL_BAUD 31250
 
-// LED instances: red, green and yellow LEDs specified above.
-static Led led_red{RED_LED_PIN};
-static Led led_green{GREEN_LED_PIN};
-static Led led_yellow{YELLOW_LED_PIN};
+// LED instances: the Clean LED and the red/green duo LED (Drive, More Drive).
+static Led led_clean{CLEAN_LED_PIN};
+static DuoLed led_drive{DUO_RED_PIN, DUO_GREEN_PIN};
 
 // Rotary encoder instance: CLK, DT and SW pins specified above.
 static RotaryEncoder encoder{ENC_CLK_PIN, ENC_DT_PIN, ENC_SW_PIN};
@@ -74,10 +75,9 @@ static RotaryEncoder encoder{ENC_CLK_PIN, ENC_DT_PIN, ENC_SW_PIN};
 // "Store" button: stores a dirty preset, or confirms settings in menu mode.
 static Button store_button{BTN_STORE_PIN};
 
-// Channel buttons: Clean, Drive and More Drive.
+// Channel buttons: Clean, and Drive (toggles Drive / More Drive).
 static Button clean_button{BTN_CLEAN_PIN};
 static Button drive_button{BTN_DRIVE_PIN};
-static Button more_button{BTN_MORE_PIN};
 
 // Relay instance: channel and gain pins specified above.
 static Relay relay{OUT_CH_PIN, OUT_GAIN_PIN};
@@ -114,13 +114,13 @@ static StatsTask stats;
 static EncoderTask encoderTask {
     encoder, store_button, presets,
     relay, display, settings,
-    led_green, led_yellow, led_red
+    led_clean, led_drive
 };
 
-// Channel task instance: the three channel buttons, displayed through
+// Channel task instance: the two channel buttons, displayed through
 // encoderTask.
 static ChannelTask channelTask {
-    clean_button, drive_button, more_button, presets, encoderTask
+    clean_button, drive_button, presets, encoderTask
 };
 
 // MIDI task instance: Program Change from MIDI IN, applied through
@@ -130,7 +130,7 @@ static MidiTask midiTask{encoderTask, settings};
 // Array of all tasks to be run in the main loop.
 static Task* tasks[] = {
     &relay,
-    &led_red, &led_green, &led_yellow,
+    &led_clean, &led_drive,
     &stats, &midiTask, &encoderTask, &channelTask
 };
 
@@ -144,7 +144,6 @@ void setup() {
     store_button.begin();
     clean_button.begin();
     drive_button.begin();
-    more_button.begin();
     if (settings.midi() == MIDI_OMNI_SETTING)
     {
         Serial.println(F("midi: omni"));

@@ -6,6 +6,7 @@
 #include "Button.hpp"
 #include "AmpChannel.hpp"
 #include "Led.hpp"
+#include "DuoLed.hpp"
 #include "RotaryEncoder.hpp"
 #include "SegmentDisplay.hpp"
 #include "Relay.hpp"
@@ -64,11 +65,12 @@
 // keep working while the menu is open.
 //
 // The "Store" button next to the encoder stores a dirty working buffer in live
-// mode, as an alternative to holding the channel button for 2 s.
+// mode; it is the only way to store a preset.
 //
 // It also owns the display of the working buffer, used by ChannelTask too: the
-// LED of the active channel is steady while the preset is clean and swells
-// while it is dirty.
+// LED of the active channel is steady while the preset is clean and blinks
+// while it is dirty. Clean has a green LED, Drive and More Drive share a
+// red/green duo LED: yellow (both dies) for Drive, red for More Drive.
 //
 // On top of the program number, the display shows for a moment:
 //   - "donE" for STORE_DONE_MS after a preset was stored,
@@ -123,10 +125,10 @@ class EncoderTask : public Task
     SegmentDisplay& display_;
     Settings& settings_;
 
-    // Channel LEDs: Clean, Drive and More Drive.
-    Led& led_green_;
-    Led& led_yellow_;
-    Led& led_red_;
+    // Channel LEDs: green for Clean, the duo LED for Drive (yellow) and More
+    // Drive (red).
+    Led& led_clean_;
+    DuoLed& led_drive_;
 
     State state_ = State::live;
 
@@ -155,7 +157,7 @@ public:
     // Constructor.
     EncoderTask(RotaryEncoder& encoder, Button& store, PresetLoader& presets,
                 Relay& relay, SegmentDisplay& display,
-                Settings& settings, Led& led_green, Led& led_yellow, Led& led_red);
+                Settings& settings, Led& led_clean, DuoLed& led_drive);
 
     // Polls the encoder, its button and the Store button; called by
     // runTasks().
@@ -185,12 +187,9 @@ private:
     // the amp follows once the encoder rests. -> browsing.
     void browse(int step);
 
-    // Lights the LED of the working buffer's channel only: steady while clean,
-    // swelling while dirty.
+    // Lights the LED of the working buffer's channel only, in its color:
+    // steady while clean, blinking while dirty.
     void showChannel();
-
-    // Returns the LED of channel.
-    Led& channelLed(AmpChannel channel);
 
     // Opens the top menu. -> menu.
     void openMenu();

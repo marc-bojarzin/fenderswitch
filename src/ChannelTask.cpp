@@ -1,8 +1,9 @@
 #include "ChannelTask.hpp"
 
-ChannelTask::ChannelTask(Button& clean, Button& drive, Button& more_drive,
-                         PresetLoader& presets, EncoderTask& ui)
-    : buttons_{&clean, &drive, &more_drive}
+ChannelTask::ChannelTask(Button& clean, Button& drive, PresetLoader& presets,
+                         EncoderTask& ui)
+    : clean_{clean}
+    , drive_{drive}
     , presets_{presets}
     , ui_{ui}
 {
@@ -10,33 +11,23 @@ ChannelTask::ChannelTask(Button& clean, Button& drive, Button& more_drive,
 
 void ChannelTask::run()
 {
-    // Poll every button on every pass, so each one keeps debouncing.
-    for (uint8_t i = 0; i < AMP_CHANNEL_COUNT; ++i)
+    // Poll both buttons on every pass, so each one keeps debouncing.
+    bool clean = clean_.pressed();
+    bool drive = drive_.pressed();
+    if (clean)
     {
-        if (buttons_[i]->pressed())
-        {
-            presets_.set_channel(static_cast<AmpChannel>(i));
-            ui_.apply();
-            holding_ = i;
-        }
+        select(AmpChannel::clean);
     }
+    if (drive)
+    {
+        select(presets_.working().channel() == AmpChannel::drive
+                   ? AmpChannel::more_drive
+                   : AmpChannel::drive);
+    }
+}
 
-    if (holding_ == NO_HOLD)
-    {
-        return;
-    }
-    if (!buttons_[holding_]->down())
-    {
-        // Released before the hold time: nothing to store.
-        holding_ = NO_HOLD;
-    }
-    else if (buttons_[holding_]->held_for() >= CHANNEL_HOLD_MS)
-    {
-        // Only the current channel's button stores, and only once per hold.
-        if (channel_index(presets_.working().channel()) == holding_)
-        {
-            ui_.store();
-        }
-        holding_ = NO_HOLD;
-    }
+void ChannelTask::select(AmpChannel channel)
+{
+    presets_.set_channel(channel);
+    ui_.apply();
 }

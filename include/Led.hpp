@@ -5,7 +5,7 @@
 #include "Task.hpp"
 
 // Time between toggles while blinking, in ms.
-#define LED_SLOW_FREQ 500
+#define LED_SLOW_FREQ 250
 #define LED_FAST_FREQ 125
 
 // Swelling: one full cycle (dark -> bright -> dark) takes 512 / LED_SWELL_STEP
@@ -37,6 +37,9 @@ enum LedStatus
 // swell() fades the LED up and down with analogWrite(), so it needs a PWM pin
 // (on the Nano D3, D5, D6, D9, D10 or D11). All other modes work on any pin.
 //
+// brightness() scales every mode down by PWM, e.g. to mix colors with two
+// LEDs (see DuoLed); below 255 it needs a PWM pin as well.
+//
 // on() and off() take effect immediately; blinking and flash() are carried out
 // by run(), so the Led must be in the list passed to runTasks(). Every call
 // replaces whatever the LED was doing before, except that calling blink_slow(),
@@ -45,6 +48,13 @@ class Led : public Task
 {
     // The output pin this LED is connected to.
     byte pin_;
+
+    // The level last set by the mode (0 = off, 255 = fully on, PWM in
+    // between), before scaling to brightness_.
+    uint8_t level_ = 0;
+
+    // Full brightness, 0-255; see brightness().
+    uint8_t brightness_ = 255;
 
     // Status of the LED.
     LedStatus status_ = led_off;
@@ -65,16 +75,20 @@ public:
     // Returns the pin number.
     byte pin() const;
 
+    // Sets the full brightness (0-255, 0 = dark), applied right away; the
+    // mode keeps going. Every mode scales its output to it.
+    void brightness(uint8_t brightness);
+
     // Sets the Led to OFF
     void off();
 
     // Sets the Led to ON
     void on();
 
-    // Sets the Led to SLOW blinking.
+    // Sets the Led to SLOW blinking, starting lit.
     void blink_slow();
 
-    // Sets the Led to FAST blinking.
+    // Sets the Led to FAST blinking, starting lit.
     void blink_fast();
 
     // Fades the LED up and down continuously, starting dark. Needs a PWM pin.
@@ -93,6 +107,9 @@ public:
 private:
     // Switches to status and restarts run() from the top.
     void start(LedStatus status);
+
+    // Remembers level and outputs it, scaled to the brightness.
+    void set(uint8_t level);
 
 };
 

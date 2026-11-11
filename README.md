@@ -15,13 +15,13 @@ On the microcontroller side, each relay is just a digital output pin driven HIGH
 
 ### Front panel
 
-There are three momentary push buttons, one for each channel, so you can select any channel directly. An LED next to each button shows which channel is active:
+There are two momentary push buttons for the channels. **Clean** selects Clean. **Drive** selects Drive when coming from Clean; after that, each press toggles between More Drive and Drive. An LED next to each button shows which channel is active; Drive and More Drive share a red/green duo LED:
 
-| Channel    | LED    |
-|------------|--------|
-| Clean      | green  |
-| Drive      | yellow |
-| More Drive | red    |
+| Channel    | LED                        |
+|------------|----------------------------|
+| Clean      | green                      |
+| Drive      | duo LED yellow (red + green) |
+| More Drive | duo LED red                |
 
 ### Presets and MIDI
 
@@ -29,7 +29,7 @@ The microcontroller's EEPROM holds up to **128 presets**, one per MIDI program n
 
 At boot, all presets are loaded from EEPROM into RAM, so switching programs never waits for the EEPROM. Preset *n* is stored in EEPROM byte *n* (bytes 0–127). Byte 128 holds the MIDI setting (0 = OMNI, 1–16 = channel), byte 129 the display brightness (0–7); the bytes above are free.
 
-All programs start out as **Clean**, the factory preset. You change a preset with the channel buttons and store it by holding the button or by pressing **Store** (see [Usage](#usage)).
+All programs start out as **Clean**, the factory preset. You change a preset with the channel buttons and store it by pressing **Store** (see [Usage](#usage)).
 
 ### Display and controls
 
@@ -38,7 +38,7 @@ An internal 4-digit 7-segment display (TM1637, with a colon) shows the current p
 ## Features
 
 - Recreates the amp's original 3-channel footswitch using two isolated signal relays
-- Three channel buttons with green, yellow and red status LEDs
+- Two channel buttons (Clean, Drive / More Drive) with a green LED and a red/green duo LED
 - 128 presets stored in EEPROM, edited directly with the channel buttons
 - MIDI IN: Program Change recalls the matching preset
 - Configurable MIDI channel and OMNI mode
@@ -71,8 +71,9 @@ Source: Fender schematic 050384 rev. B and footswitch assembly 050419. The volta
 | | 4-digit 7-segment display with colon, TM1637 module | CLK/DIO two-wire bus (not I2C) |
 | | Rotary encoder with push button | Bare 5-pin mechanical encoder (EC11 style) |
 | R × 3 | 10 kΩ | Encoder: pull-ups from A, B and SW to 5 V |
-| | 3 × LED | Green, yellow and red channel indicators, each with a series resistor |
-| | 4 × momentary push button | One per channel, plus Store next to the encoder. Wired to GND, using the internal pull-ups, debounced in firmware |
+| | LED, green | Clean indicator, with a series resistor |
+| | Duo LED red/green, common cathode, 3 pins | Drive (yellow) and More Drive (red) indicator, one series resistor per die. The shade of yellow is set in firmware by PWM (`DUO_YELLOW_RED`, `DUO_YELLOW_GREEN` in [DuoLed.hpp](include/DuoLed.hpp)) |
+| | 3 × momentary push button | Clean, Drive (toggles Drive / More Drive) and Store next to the encoder. Wired to GND, using the internal pull-ups, debounced in firmware |
 | K1, K2 | 5 V signal relay with gold-plated contacts, 1 form C (SPDT) | E.g. Omron G5V-1, Panasonic TQ2-5V, Hongfa HFD2. K1 = channel, K2 = gain. Only the NC contact is used |
 | Q × 2 | BC548C | Low-side coil driver, 100 mA max |
 | R_B × 2 | 1 kΩ | GPIO to base, about 4.3 mA base current |
@@ -181,18 +182,17 @@ During reset both LEDs are off, which matches the relays at rest (Clean). One th
 | D5 | Encoder SW | "Enter" button |
 | D7 | OUT_CH: R_B to the K1 driver (channel) | HIGH = coil on, contact open |
 | D8 | OUT_GAIN: R_B to the K2 driver (gain) | HIGH = coil on, contact open |
-| D9 | Red LED | More Drive, PWM (swell) |
-| D10 | Yellow LED | Drive, PWM (swell) |
-| D11 | Green LED | Clean, PWM (swell) |
+| D9 | Duo LED, red die | Drive and More Drive, PWM (color mix) |
+| D10 | Duo LED, green die | Drive, PWM (color mix) |
+| D11 | Green LED | Clean |
 | A4 | Display DIO | TM1637, bit-banged |
 | A5 | Display CLK | TM1637, bit-banged |
 | A0 | Clean button | To GND, `INPUT_PULLUP` |
 | A1 | Drive button | To GND, `INPUT_PULLUP` |
-| A2 | More Drive button | To GND, `INPUT_PULLUP` |
 | A3 | Store button | To GND, `INPUT_PULLUP` |
 | 5V / GND | Display VCC, encoder pull-ups, and GND for all modules (including encoder C and SW), relay coils and driver emitters | |
 
-The channel LEDs must be on PWM pins, because a dirty preset makes its LED swell with `analogWrite()`. OUT_CH and OUT_GAIN only switch, so they use the non-PWM pins D7 and D8. Don't use D13 for OUT_CH or OUT_GAIN: the bootloader blinks the on-board LED on it, which would switch the relay.
+Both dies of the duo LED must be on PWM pins, because the firmware mixes the yellow with `analogWrite()`. The Clean LED only switches; it sits on D11, a PWM pin, all the same. OUT_CH and OUT_GAIN only switch, so they use the non-PWM pins D7 and D8. Don't use D13 for OUT_CH or OUT_GAIN: the bootloader blinks the on-board LED on it, which would switch the relay.
 
 ### Checking the relay stages
 
@@ -277,12 +277,12 @@ flowchart TD
     Mode --> Apply["apply relay sequence<br>(make-before-break, 20 ms)"]
     Apply --> UI["update LEDs and display"]
 
-    Btn["channel button pressed<br>(debounced)"] --> Diff{"differs from<br>stored preset?"}
-    Diff -- "yes: dirty" --> Blink["swell channel LED"]
+    Btn["channel button pressed<br>(debounced): Clean, or Drive<br>(Drive / More Drive toggle)"] --> Diff{"differs from<br>stored preset?"}
+    Diff -- "yes: dirty" --> Blink["blink channel LED"]
     Diff -- "no: clean" --> Steady["channel LED steady"]
     Blink --> Mode
     Steady --> Mode
-    Hold["same button held 2 s<br>or Store pressed,<br>while dirty"] --> Store["store channel in preset<br>(EEPROM)"]
+    Hold["Store pressed,<br>while dirty"] --> Store["store channel in preset<br>(EEPROM)"]
     Store --> Steady
 ```
 
@@ -389,10 +389,10 @@ Don't send from both at the same time: the two streams would mix on the shared l
 
 All 128 presets are initialized to **Clean** in the EEPROM. This is the **factory preset**.
 
-1. Press one of the three channel buttons, for example **Drive**. The amp switches to that channel right away.
-2. If the new channel differs from the one stored in the preset, its LED **swells** (fades up and down). This means the preset is **dirty**: the current state is modified but not saved.
-3. Press the button of the stored channel to go back to it. The preset is clean again and the LED lights steadily.
-4. To keep the change instead, **hold the same channel button for 2 seconds**, or **press Store** once. The new channel is written to the preset in EEPROM, the LED stops swelling, and the display shows `donE` for a moment (`STORE_DONE_MS`, 600 ms). If the preset has no unsaved change, there is nothing to store: the LED goes dark for a moment to show that the press was registered.
+1. Press one of the two channel buttons, for example **Drive**. The amp switches to that channel right away. Press **Drive** again to toggle between More Drive and Drive.
+2. If the new channel differs from the one stored in the preset, its LED **blinks** (twice a second). This means the preset is **dirty**: the current state is modified but not saved.
+3. Go back to the stored channel to undo the change. The preset is clean again and the LED lights steadily.
+4. To keep the change instead, **press Store**. This is the only way to store a preset. The new channel is written to the preset in EEPROM, the LED stops blinking, and the display shows `donE` for a moment (`STORE_DONE_MS`, 600 ms). If the preset has no unsaved change, there is nothing to store: the LED goes dark for a moment to show that the press was registered.
 
 A program change while the preset is dirty, whether by MIDI Program Change or with the encoder, drops the modified state without saving it. The preset keeps its stored channel.
 
@@ -432,13 +432,14 @@ Picking a value in a submenu writes it to EEPROM, takes effect right away and le
 | [include/Preset.hpp](include/Preset.hpp) | The channel stored for one MIDI program, loads from and flushes to the EEPROM byte of a given program number |
 | [include/PresetLoader.hpp](include/PresetLoader.hpp) | All 128 presets in RAM plus the working buffer, dirty tracking and storing |
 | [include/Relay.hpp](include/Relay.hpp) | Drives the two relays (NC contacts), switching make-before-break |
-| [include/Led.hpp](include/Led.hpp) | On/off LED with slow/fast blinking, swelling (PWM), a one-shot flash and a short wink (off, then on again) |
-| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" opens the settings menu (MIDI channel, display brightness; Enter or Store confirms), Store saves a dirty preset. Also shows the working buffer: steady or swelling LED while dirty |
+| [include/Led.hpp](include/Led.hpp) | On/off LED with adjustable brightness (PWM), slow/fast blinking, swelling (PWM), a one-shot flash and a short wink (off, then on again) |
+| [include/DuoLed.hpp](include/DuoLed.hpp) | Red/green duo LED made of two Leds, one per die: the Led modes on both, colors red, green and yellow mixed by their brightness (PWM) |
+| [include/EncoderTask.hpp](include/EncoderTask.hpp) | Browses the presets with the encoder (right = next program, wraps around), "Enter" opens the settings menu (MIDI channel, display brightness; Enter or Store confirms), Store saves a dirty preset. Also shows the working buffer: steady LED, or blinking while dirty |
 | [include/Settings.hpp](include/Settings.hpp) | The menu settings: MIDI (OMNI or channel 1–16) and display brightness, in EEPROM bytes 128 and 129 |
 | [include/MidiTask.hpp](include/MidiTask.hpp) | MIDI IN: reads the UART, filters by the MIDI channel or OMNI from Settings, and recalls the preset of each Program Change right away |
 | [include/MidiParser.hpp](include/MidiParser.hpp) | Byte-by-byte MIDI parser: running status, real-time bytes in the middle of messages, SysEx and stray data bytes |
-| [include/ChannelTask.hpp](include/ChannelTask.hpp) | The three channel buttons: a press switches the amp right away, holding the current channel's button for 2 s stores a dirty preset |
-| [include/Button.hpp](include/Button.hpp) | Debounced push button to GND, with hold detection (channel buttons, Store, the encoder's "Enter") |
+| [include/ChannelTask.hpp](include/ChannelTask.hpp) | The two channel buttons, Clean and Drive (Drive / More Drive toggle): a press switches the amp right away |
+| [include/Button.hpp](include/Button.hpp) | Debounced push button to GND (channel buttons, Store, the encoder's "Enter") |
 | [tools/footboard/](tools/footboard/) | Test rig (Node.js): a web MIDI footboard that sends Program Change over USB serial, and a separate device monitor that shows the firmware's display and serial output |
 | [tools/usb_midi_bridge.py](tools/usb_midi_bridge.py) | Linux: virtual ALSA MIDI port, forwarded over USB serial at 31250 baud, prints the firmware's serial output |
 | [include/StatsTask.hpp](include/StatsTask.hpp) | Prints loop passes per second over Serial, to spot blocking code. Off by default, turn it on with `-DSTATS_INTERVAL_S=10` in `build_flags` (development only) |

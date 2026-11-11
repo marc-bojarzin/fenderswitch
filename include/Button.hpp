@@ -12,8 +12,7 @@
 // Momentary push button from a pin to GND, on the internal pull-up.
 //
 // Polled, not interrupt driven: call pressed() often, e.g. on every loop()
-// pass. down() and held_for() report the state as of the last call to
-// pressed().
+// pass. down() reports the state as of the last call to pressed().
 //
 // Debounced on the leading edge: a press counts on the first LOW reading
 // after the button has rested, so it reacts within one loop pass instead of
@@ -30,7 +29,7 @@ class Button
     // Debounced level (HIGH = released).
     uint8_t stable_ = HIGH;
 
-    // millis() of the last debounced change, i.e. of the press while down.
+    // millis() of the last debounced change.
     uint32_t changed_at_ = 0;
 
 public:
@@ -49,10 +48,6 @@ public:
 
     // Returns true while the button is held down (debounced).
     bool down() const;
-
-    // Returns how long the button has been held down, in ms, or 0 while it is
-    // released.
-    uint32_t held_for() const;
 };
 
 #endif // BUTTON_HPP
